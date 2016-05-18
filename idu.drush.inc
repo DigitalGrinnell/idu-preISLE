@@ -171,6 +171,7 @@ function idu_drush_command( ) {
       // Options above this line apply to ALL commands.
       'cmodel'    => t("Specifies the target CModel (content model) in the ChangeCompound command.  Defaults to 'islandora/sp_large_image_cmodel'.\n"),
       'compress'  => t("Specifies a file containing Kakadu 'compress' options for the ConvertTIFtoJP2 fix.\n"),
+      'contents'  => t("Specifies text to be included in a datastream.  Default varies by use.\n"),
       'convert'   => t("Specifies a file containing ImageMagick 'convert' options for the ConvertTIFtoJP2 fix.\n"),
       'creator'   => t("Specifies a dc:creator value for the UpdateDC fix.  Default is 'Unknown'.\n"),
       'csv'       => t("Specifies the path of a CSV file to be read. Defaults to public://data.csv.\n"),
@@ -191,6 +192,7 @@ function idu_drush_command( ) {
       'sibling'   => t("Specifies the PID of one existing child object in need of a sibling.\n"),
       'source'    => t("Specifies the DC field from which /mods/extension/creators is to be constructed.  Default is 'dc:creator'.\n"),
       'substitutionsFile' => t("In place of 'find' and 'replace', this option specifies the path to a 'csv' style file from which 'find, replace' pairs will be read.\n"),
+      'title'     => t("Specifies a title or label when needed. Default varies by use.\n"),
       'xpath'     => t("Specifies a metadata XPath whenever one is needed. Note that it is wise to put your XPath in double quotes and use single quotes within where necessary.\n"),
       'xsl'       => t("Specifies the path to the MODS-to-DC transform XSL file to be applied. Defaults to public://mods_to_dc_grinnell-modified-2014-09-24.xsl.\n"),
     ),
@@ -659,6 +661,42 @@ function idu_drush_drupal_PurgeTempFiles( ) {
     ->condition('uri', "temporary://%", "LIKE")
     ->execute();
   return $deleted;
+}
+
+/**
+ * Drush idu_fix_* function to add a specified datastream to an existing object.
+ *
+ * Invoke this function with an iduF process using a command of the form:
+ *   drush iduF $pids AddDatastream --dsid=WF --title=Test --content=1934660
+ *
+ * Applicable options are:
+ *   --dsid=The new datastream ID such as 'WF'.  Defaults to 'WF'.
+ *   --title=The new datastream title.  Defaults to 'Islandora Webforms List'.
+ *   --contents=The new datastream content.   Defaults to '1934660'.
+ *
+ * @param string $pid
+ *   The PID (from the list of first-to-last) to operate on.
+ * @return int
+ *   The number of repair operations performed, or zero if none.
+ */
+function idu_drush_fix_AddDatastream($pid) {
+
+  // For any exception, report and skip this PID
+  if (!$object = _idu_Repository()->getObject($pid)) {
+    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    return 0;
+  }
+
+  // Get options...
+  $dsid = drush_get_option('dsid', 'WF');
+  $title = drush_get_option('title', 'Islandora Webforms List');
+  $contents = drush_get_option('contents', '1934660');
+
+  // Make the new datastream copy.  Assume it is a text/plain and Managed.
+  $newDS = idu_copy_datastream($object, NULL, 'text/plain', 'M', $dsid, $title, $contents);
+  $object->ingestDatastream($newDS);
+
+  return 1;
 }
 
 /**
@@ -3006,7 +3044,8 @@ function idu_build_creators_element($object) {
 }
 
 /**
- * Copy a datastream from one object to another.
+ * Copy a datastream from one object to another.  If $fromDSID is NULL this command will
+ * add a new Managed, text/plain datastream instead.
  *
  * @param FedoraObject $fromObject
  *   The FedoraObject to copy from.
@@ -3020,19 +3059,26 @@ function idu_build_creators_element($object) {
  *   The new DSID to be created, if specified.  If not specified the DSID of the old datastream is preserved.
  * @param string $newLabel
  *   The new datastream label to be created, if specified.  If not specified the label of the old datastream is preserved.
+ * @param string $newContent
+ *   The text content of the new datastream, if specified.
  * @return FedoraDatastream
  *   The new FedoraDatastream object, not yet ingested.
  */
-function idu_copy_datastream($fromObject, $fromDSID, $mime=NULL, $controlGroup=NULL, $newID=NULL, $newLabel=NULL) {
+function idu_copy_datastream($fromObject, $fromDSID, $mime=NULL, $controlGroup=NULL, $newID=NULL, $newLabel=NULL, $newContent=NULL) {
   $cg = ($controlGroup ? $controlGroup : $fromObject[$fromDSID]->controlGroup);
   $newDS = ($newID ? $fromObject->constructDatastream($newID, $cg) : $fromObject->constructDatastream($fromDSID, $cg));
 
   $newDS->label = ( $newLabel ? $newLabel : $fromObject[$fromDSID]->label );
   $newDS->mimetype = ( $mime ? $mime : $fromObject[$fromDSID]->mimetype );
-  $temp_file = drupal_tempnam('temporary://', 'datastream');  // open a temp file
-  $fromObject[$fromDSID]->getContent($temp_file);  // copy DS binary content to the temp file
-  $newDS->setContentFromFile($temp_file);          // set new DS content from the temp file
-  drupal_unlink($temp_file);               // discard the temp file
+
+  if (!is_null($fromDSID)) {
+    $temp_file = drupal_tempnam('temporary://', 'datastream');  // open a temp file
+    $fromObject[$fromDSID]->getContent($temp_file);  // copy DS binary content to the temp file
+    $newDS->setContentFromFile($temp_file);          // set new DS content from the temp file
+    drupal_unlink($temp_file);               // discard the temp file
+  } else {
+    $newDS->setContentFromString($newContent);
+  }
   return $newDS;
 }
 
