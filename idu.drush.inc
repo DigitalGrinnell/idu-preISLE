@@ -672,7 +672,7 @@ function idu_drush_drupal_PurgeTempFiles( ) {
  * Applicable options are:
  *   --dsid=The new datastream ID such as 'WF'.  Defaults to 'WF'.
  *   --title=The new datastream title.  Defaults to 'Islandora Webforms List'.
- *   --contents=The new datastream content.   Defaults to '1934660'.
+ *   --contents=The new datastream content.   Defaults to ' 1934660 '.
  *
  * @param string $pid
  *   The PID (from the list of first-to-last) to operate on.
@@ -690,9 +690,9 @@ function idu_drush_fix_AddDatastream($pid) {
   // Get options...
   $dsid = drush_get_option('dsid', 'WF');
   $title = drush_get_option('title', 'Islandora Webforms List');
-  $contents = drush_get_option('contents', '1934660');
+  $contents = drush_get_option('contents', ' 1934660 ');
 
-  // Make the new datastream copy.  Assume it is a text/plain and Managed.
+  // Make the new datastream copy.  Assume it is text/plain and Managed.
   $newDS = idu_copy_datastream($object, NULL, 'text/plain', 'M', $dsid, $title, $contents);
   $object->ingestDatastream($newDS);
 
