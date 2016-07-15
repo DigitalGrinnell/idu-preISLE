@@ -1925,7 +1925,7 @@ function idu_drush_fix_Purge($pid, $options=NULL) {
     return 0;
   }
 
-  // Get this object's health from the available CSV data.  Verify that we have the correct object.
+  /* Get this object's health from the available CSV data.  Verify that we have the correct object.
   if ($row = or_get($pid)) {
     if ($row['B'] === $pid) {
       list($nC, $constituents) = icu_get_count_and_content($row['H']);  // from the RI
@@ -1942,7 +1942,7 @@ function idu_drush_fix_Purge($pid, $options=NULL) {
         }
       }
     }
-  }
+  } */
 
   idu_repo( )->purgeObject($pid);
   return 1;
