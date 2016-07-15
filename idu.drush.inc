@@ -1915,6 +1915,7 @@ function idu_drush_fix_MIMEFix($pid) {
  */
 function idu_drush_fix_Purge($pid, $options=NULL) {
   module_load_include('inc', 'icu', 'icu');
+  module_load_include('inc', 'icu', 'object_record');
 
   list($ns, $r) = explode(':', $pid);
 
@@ -2067,6 +2068,7 @@ function idu_drush_fix_PurgeElements($pid) {
  */
 function idu_drush_fix_PurgeFamily($pid, $options=NULL) {
   module_load_include('inc', 'icu', 'icu');
+  module_load_include('inc', 'icu', 'object_record');
 
   list($ns, $r) = explode(':', $pid);
 
@@ -2119,6 +2121,7 @@ function idu_drush_fix_PurgeFamily($pid, $options=NULL) {
  *   The number of repair operations performed, or zero if none.
  */
 function idu_drush_fix_PurgeInactive($pid, $options=NULL) {
+  module_load_include('inc', 'icu', 'object_record');
   list($ns, $r) = explode(':', $pid);
 
   // For any exception, report and skip this PID
