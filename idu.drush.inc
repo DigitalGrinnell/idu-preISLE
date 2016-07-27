@@ -72,8 +72,7 @@ function idu_drush_command( ) {
 
       CModelToMODS -
         Copy object's /rdf:RDF/rdf:Description/fedora-model:hasModel[@rdf:resource]
-          attribute from the RELS-EXT datastream to its
-          /mods:mods/mods:extension/mods:CModel.
+          attribute from the RELS-EXT datastream to its /mods/extension/CModel.
 
       ConvertTIFtoJP2 -
         Converts an object OBJ datastream to a JP2 using options
@@ -197,7 +196,7 @@ function idu_drush_command( ) {
       'xsl'       => t("Specifies the path to the MODS-to-DC transform XSL file to be applied. Defaults to public://mods_to_dc_grinnell-modified-2014-09-24.xsl.\n"),
     ),
     'examples' => array(
-      'Example' => "drush iduF grinnell:10000 ChangeText --dsid=MODS --xpath=\"/mods:mods/mods:relatedItem/mods:identifier[@type='uri']\"",
+      'Example' => "drush iduF grinnell:10000 ChangeText --dsid=MODS --xpath=\"/mods/relatedItem/identifier[@type='uri']\"",
     ),
     'aliases' => array('iduF'),
   );
@@ -753,7 +752,7 @@ function idu_drush_fix_ChangeCompound($pid) {
  *
  * Invoke this function via iduF and the 'ChangeText' operation parameter.  Something like this...
  *
- *   drush iduF grinnell:501 ChangeText --substitutionsFile="public://findReplace.csv" --dsid=MODS --xpath="/mods:mods/mods:description/mods:identifier[@type='uri']
+ *   drush iduF grinnell:501 ChangeText --substitutionsFile="public://findReplace.csv" --dsid=MODS --xpath="/mods/description/identifier[@type='uri']
  *
  * Applicable options include the following:
  *
@@ -949,7 +948,7 @@ function idu_drush_fix_ChildSync($pid, $options) {
  * Drush idu_fix_* function to copy CModel attribute from RELS-EXT to MODS.
  *
  * The fields involved are /rdf:RDF/rdf:Description/fedora-model:hasModel[@rdf:resource]
- * from the RELS-EXT datastream and /mods:mods/mods:extension/mods:CModel in MODS.
+ * from the RELS-EXT datastream and /mods/extension/CModel in MODS.
  *
  * Invoke this function with an iduF process using a command of the form:
  *   drush iduF $pids CModelToMODS
@@ -960,6 +959,8 @@ function idu_drush_fix_ChildSync($pid, $options) {
  *   The number of datastreams modified, or zero if none.
  */
 function idu_drush_fix_CModelToMODS($pid) {
+  static $mods_ns = 'mods';
+  static $mods_nsU = 'http://www.loc.gov/mods/v3';
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
@@ -978,27 +979,28 @@ function idu_drush_fix_CModelToMODS($pid) {
     break;
   }
 
-  // Have a look in MODS for a /mods:extension/mods:CModel element.
+  // Have a look in MODS for a /extension/CModel element.
   $xml = new DOMDocument;
   $xml->loadXML($mods->content);
   $dx = new DOMXPath($xml);
 
   // Find the target MODS element, if any.
-  $parents = $dx->query("/mods:mods/mods:extension");
+  $dx->registerNamespace($mods_ns, $mods_nsU);
+  $parents = $dx->query("/mods/extension");
 
   foreach ($parents as $parent) {         // There should be only ONE!
     // Now look for mods:CModel...
-    $target = $dx->query("/mods:mods/mods:extension/mods:CModel");
+    $target = $dx->query("/mods/extension/CModel");
 
     // ...If not there append a new element to $parent.
     if ($target->length === 0) {
-      $new = $xml->createElement("mods:CModel", $model);
+      $new = $xml->createElement("CModel", $model);
       $parent->appendChild($new);
       $content = $xml->saveXML();
       $total += 1;
       $object['MODS']->setContentFromString($content);
 
-    // ...If mods:CModel already exists, do nothing (@TODO...fix this?)
+    // ...If CModel already exists, do nothing (@TODO...fix this?)
     } else {
       $total += 0;
     }
@@ -2552,6 +2554,9 @@ function idu_drush_fix_toPHPP($pid, $options) {
  *   The number of children added, or zero if none.
  */
 function idu_drush_fix_UpdateDC($pid) {
+  static $mods_ns = 'mods';
+  static $mods_nsU = 'http://www.loc.gov/mods/v3';
+
   define('COLLECTION_MODS', "<mods xmlns='http://www.loc.gov/mods/v3' xmlns:mods='http://www.loc.gov/mods/v3' xmlns:xlink='http://www.w3.org/1999/xlink' xmlns:xsi='http://www.w3.org/2001/XMLSchema-instance'><mods:titleInfo><mods:title>xxx</mods:title></mods:titleInfo><mods:extension><mods:primarySort>0</mods:primarySort></mods:extension></mods>");
 
   // For any exception, report and skip this PID
@@ -2563,27 +2568,29 @@ function idu_drush_fix_UpdateDC($pid) {
   $total = 0;
 
   // Check the --fixName option.  If present, check the MODS record for a /name/namePart[not(@*)] element.
-  // Also, check for a /mods:mods/mods:name/mods:role/mods:roleTerm[not(@*)] and add a type="text"
+  // Also, check for a /mods/name/role/roleTerm[not(@*)] and add a type="text"
   // attribute to it.
   if ($fixName = drush_get_option('fixName', NULL)) {
     if ($mods = $object['MODS']) {
       $xml = new DOMDocument;
       $xml->loadXML($mods->content);
       $mx = new DOMXPath($xml);
+      $mx->registerNamespace($mods_ns, $mods_nsU);
+
 
       // Find the /name parent of our target element.
-      $parents = $mx->query("/mods:mods/mods:name");
+      $parents = $mx->query("/mods/name");
       foreach ($parents as $parent) {
         // Now look for /name/namePart[not(@*))]... if not there see if we have a valid @type='family' and @type='given' to derive one from;
-        $target = $mx->query("/mods:mods/mods:name/mods:namePart[not(@*)]");
+        $target = $mx->query("/mods/name/namePart[not(@*)]");
         if ($target->length === 0) {
-          $family = $mx->query("/mods:mods/mods:name/mods:namePart[@type='family']");
+          $family = $mx->query("/mods/name/namePart[@type='family']");
           if ($family->length > 0) {
             foreach ($family as $f) {
               $name = $f->nodeValue;
               break;
             }
-            $given = $mx->query("/mods:mods/mods:name/mods:namePart[@type='given']");
+            $given = $mx->query("/mods/name/namePart[@type='given']");
             if ($given->length > 0) {
               foreach ($given as $g) {
                 $name .= ', ' . $g->nodeValue;
@@ -2601,7 +2608,7 @@ function idu_drush_fix_UpdateDC($pid) {
         }
 
         // Now look for /name/role/roleTerm[not(@*))]... and if not there add a type="text" attribute.
-        $targets = $mx->query("/mods:mods/mods:name/mods:role/mods:roleTerm[not(@*)]");
+        $targets = $mx->query("/mods/name/role/roleTerm[not(@*)]");
         foreach ($targets as $target) {
           $type = $xml->createAttribute('type');
           $type->value = 'text';
@@ -2685,18 +2692,19 @@ function idu_drush_fix_UpdateDC($pid) {
   }
 
   // Ok, at this point we have a MODS datastream.  Have a look within for extension/creators.
-  // Find /mods:mods/mods:extension...the parent of our target element.
+  // Find /mods/extension...the parent of our target element.
   $xml = new DOMDocument;
   $xml->loadXML($mods->content);
   $mx = new DOMXPath($xml);
+  $mx->registerNamespace($mods_ns, $mods_nsU);
 
-  $parents = $mx->query("/mods:mods/mods:extension");
+  $parents = $mx->query("/mods/extension");
 
-  // Make sure we have one /mods:mods/mods:extension field.
+  // Make sure we have one /mods/extension field.
   if ($parents->length === 0) {
-    $parents = $mx->query("/mods:mods");
+    $parents = $mx->query("/mods");
     foreach ($parents as $parent) {
-      $new = $xml->createElement("mods:extension");
+      $new = $xml->createElement("extension");
       $parent->appendChild($new);
       $content = $xml->saveXML();
       try {
@@ -2711,27 +2719,29 @@ function idu_drush_fix_UpdateDC($pid) {
   }
 
   // If this is a $collection, skip over this step...
-  // Now look for /mods:mods/mods:extension/mods:creators... if not found append a new element to $parent.
+  // Now look for /mods/extension/creators... if not found append a new element to $parent.
   if (!$collection) {
     $xml = new DOMDocument;
     $xml->loadXML($object['MODS']->content);
     $mx = new DOMXPath($xml);
-    $parents = $mx->query("/mods:mods/mods:extension");
+    $mx->registerNamespace($mods_ns, $mods_nsU);
+
+    $parents = $mx->query("/mods/extension");
 
     foreach ($parents as $parent) {         // There should be only ONE!
-      $target = $mx->query("/mods:mods/mods:extension/mods:creators");
+      $target = $mx->query("/mods/extension/creators");
       $val = idu_build_creators_element($object);
 
-      // No /mods:creators...create one.
+      // No /creators...create one.
       if ($target->length === 0) {
-        $new = $xml->createElement("mods:creators", $val);
+        $new = $xml->createElement("creators", $val);
         $parent->appendChild($new);
         $content = $xml->saveXML();
         $total += 1;
         $object['MODS']->setContentFromString($content);
         break;
 
-      // We already have a /mods:creators... make sure it is up-to-date
+      // We already have a /creators... make sure it is up-to-date
       } else {
         foreach ($target as $t) {
           if ($t->nodeValue === "0" || $t->nodeValue === "") {
@@ -2750,18 +2760,19 @@ function idu_drush_fix_UpdateDC($pid) {
     }
   }
 
-  // Now look for /mods:mods/mods:extension/mods:primarySort... if not found append a new element to $parent.
+  // Now look for /mods/extension/primarySort... if not found append a new element to $parent.
   $xml = new DOMDocument;
   $xml->loadXML($object['MODS']->content);
   $mx = new DOMXPath($xml);
-  $parents = $mx->query("/mods:mods/mods:extension");
+  $mx->registerNamespace($mods_ns, $mods_nsU);
+  $parents = $mx->query("/mods/extension");
 
   foreach ($parents as $parent) {         // There should be only ONE!
-    $target = $mx->query("/mods:mods/mods:extension/mods:primarySort");
+    $target = $mx->query("/mods/extension/primarySort");
 
     if ($target->length === 0) {
       $val = ($collection ? 0 : 1);
-      $new = $xml->createElement("mods:primarySort", $val);
+      $new = $xml->createElement("primarySort", $val);
       $parent->appendChild($new);
       $content = $xml->saveXML();
       $total += 1;
