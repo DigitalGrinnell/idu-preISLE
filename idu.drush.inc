@@ -2557,7 +2557,7 @@ function idu_drush_fix_UpdateDC($pid) {
   static $mods_ns = 'mods';
   static $mods_nsU = 'http://www.loc.gov/mods/v3';
 
-  define('COLLECTION_MODS', "<mods xmlns='http://www.loc.gov/mods/v3' xmlns:mods='http://www.loc.gov/mods/v3' xmlns:xlink='http://www.w3.org/1999/xlink' xmlns:xsi='http://www.w3.org/2001/XMLSchema-instance'><mods:titleInfo><mods:title>xxx</mods:title></mods:titleInfo><mods:extension><mods:primarySort>0</mods:primarySort></mods:extension></mods>");
+  define('COLLECTION_MODS', "<mods xmlns='http://www.loc.gov/mods/v3' xmlns:mods='http://www.loc.gov/mods/v3' xmlns:xlink='http://www.w3.org/1999/xlink' xmlns:xsi='http://www.w3.org/2001/XMLSchema-instance'><titleInfo><title>xxx</title></titleInfo><extension><primarySort>0</primarySort></extension></mods>");
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
