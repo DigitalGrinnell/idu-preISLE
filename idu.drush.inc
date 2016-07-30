@@ -65,14 +65,16 @@ function idu_drush_command( ) {
           relationship exists.
  
           Characteristics include:
-            Child will inherit the same isMemberOfCollection values as the parent.
+            Child will inherit the same isMemberOfCollection values as 
+            the parent.
 
       Clean -
         Removes all unnecessary datastreams from an existing object.
 
       CModelToMODS -
-        Copy object's /rdf:RDF/rdf:Description/fedora-model:hasModel[@rdf:resource]
-          attribute from the RELS-EXT datastream to its /mods/extension/CModel.
+        Copy object's /rdf:RDF/rdf:Description/...
+          fedora-model:hasModel[@rdf:resource] attribute from the RELS-EXT 
+          datastream to its /mods/extension/CModel.
 
       ConvertTIFtoJP2 -
         Converts an object OBJ datastream to a JP2 using options
@@ -84,9 +86,9 @@ function idu_drush_command( ) {
           datastream.
 
       CorrectCollections -
-        Corrects collection assignments including removal of duplicate collection
-          relationships, and removal of --retire collection references IF other
-          relationships exist.
+        Corrects collection assignments including removal of duplicate 
+          collection relationships, and removal of --retire collection 
+          references IF other relationships exist.
 
       DCTransform -
         Applies the specified self-transform to an object's MODS then
@@ -144,7 +146,8 @@ function idu_drush_command( ) {
           to all.
 
       ReportChildDuplicates -
-        Echo the MODS elements of a child object that are duplicated in its parent.
+        Echo the MODS elements of a child object that are duplicated in its 
+        parent.
 
       Thumbnail -
         Applies the specified thumbnail image to an object.
