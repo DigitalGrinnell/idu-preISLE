@@ -2,14 +2,14 @@
 
 /**
  * Some available drush functions...
- * 
+ *
  * drush_log('Log an event using drush', 'warning');
  * drush_set_error('Set an error with drush.');
  * t('Translate strings with drush');
  * drush_print('Print to command line with drush');
  * drush_print_table($rows, TRUE); //print a command line table with drush
  * drush_confirm('Are you sure you want to continue?', $indent = 0); //Add drush confirmation
- * 
+ *
  */
 
 /**
@@ -510,84 +510,84 @@ function drush_idu_iduFix($first, $fix) {
 
 }
 
-  /**
-   * Callback function for drush iduHandle, alias iduH.
-   *
-   * This callback runs the prescribed Handle command for a given PID with an optional --repeat
-   * to touch subsequent objects in the same namespace.  Functions called must be of the form...
-   *     $count = drush_idu_handle_OPERATION($pid);
-   *
-   * @param string $first
-   *   First PID to process.
-   * @param string $handle_op
-   *   The Handle operation to be performed.  This string completes the name of an existing idu_drush_handle_* function.
-   */
-  function drush_idu_iduHandle($first, $handle_op) {
+/**
+ * Callback function for drush iduHandle, alias iduH.
+ *
+ * This callback runs the prescribed Handle command for a given PID with an optional --repeat
+ * to touch subsequent objects in the same namespace.  Functions called must be of the form...
+ *     $count = drush_idu_handle_OPERATION($pid);
+ *
+ * @param string $first
+ *   First PID to process.
+ * @param string $handle_op
+ *   The Handle operation to be performed.  This string completes the name of an existing idu_drush_handle_* function.
+ */
+function drush_idu_iduHandle($first, $handle_op) {
 
-    // Get the Handle operation parameter...
-    $function = 'idu_drush_Handle_'.$handle_op;
-    if (!function_exists($function)) { drush_log("The specified Handle function '$function' does not exist!", 'error'); }
+  // Get the Handle operation parameter...
+  $function = 'idu_drush_Handle_'.$handle_op;
+  if (!function_exists($function)) { drush_log("The specified Handle function '$function' does not exist!", 'error'); }
 
-    if (!$pids = idu_drush_prep($first, $last, $pidn, $range, $ns, TRUE)) { return; }     // Get the PIDs and initialize the loop...
+  if (!$pids = idu_drush_prep($first, $last, $pidn, $range, $ns, TRUE)) { return; }     // Get the PIDs and initialize the loop...
 
-    idu_drush_print_progress("iduHandle - $handle_op");
-    $count = 0;
+  idu_drush_print_progress("iduHandle - $handle_op");
+  $count = 0;
 
-    // If there's only one PID... process it.
-    if (count($pids) === 1) {
-      $count += call_user_func($function, $pids[0]);
-      idu_drush_post_to_file("iduHandle - $handle_op: $pids[0] complete.", NULL, 'public://iduHandle_progress.log');
-      idu_drush_print_progress("iduHandle - $handle_op", 0, 1);
+  // If there's only one PID... process it.
+  if (count($pids) === 1) {
+    $count += call_user_func($function, $pids[0]);
+    idu_drush_post_to_file("iduHandle - $handle_op: $pids[0] complete.", NULL, 'public://iduHandle_progress.log');
+    idu_drush_print_progress("iduHandle - $handle_op", 0, 1);
 
-      // Operate on a range of PID numbers.
-    } else {
-      $i = 0;
-      foreach ($pids as $pid) {
-        $count += call_user_func($function, $pid);
-        idu_drush_post_to_file("iduHandle - $handle_op: $pid complete.", NULL, 'public://iduHandle_progress.log');
-        idu_drush_print_progress("iduHandle - $handle_op", $i, $range);
-      }
+    // Operate on a range of PID numbers.
+  } else {
+    $i = 0;
+    foreach ($pids as $pid) {
+      $count += call_user_func($function, $pid);
+      idu_drush_post_to_file("iduHandle - $handle_op: $pid complete.", NULL, 'public://iduHandle_progress.log');
+      idu_drush_print_progress("iduHandle - $handle_op", $i, $range);
     }
-
-    // Done.
-    $finish = date('H:i:s');
-    drush_log("Completed $count 'iduHandle - $handle_op' operations at $finish. \n", 'status');
-
-    // If one or more handles were created there should be a batch file to process.  Do that now.
-    if ($count > 0) {
-      $fileName = 'temporary://'.H_BATCH;
-      $logFile = 'temporary://'.H_LOG;
-      if (!file_exists($fileName)) { die("Could not find existing batch file $fileName!  "); }
-      if (!$file = fopen($fileName, 'r')) { die("Could not open existing batch file $fileName to read!  "); }
-
-      $path = drupal_realpath($fileName);
-      $log = drupal_realpath($logFile);
-
-      // Build a call to the batch file and run it.
-      $output = array( );
-      $command = H_BINDIR."/hdl-genericbatch $path $log.tmp -verbose";
-      exec($command, $output, $return_status);
-
-      // Keep a timestamped copy of the log file.
-      if (file_exists("$log.tmp")) {
-        $newLog = 'temporary://'.H_LOG.time( );
-        file_put_contents($newLog, file_get_contents($log));
-        file_put_contents($newLog, file_get_contents("$log.tmp"), FILE_APPEND);
-        drush_log("Batch call to the Handle System is complete. A copy of the composite log file is stored in '$newLog'.", 'status');
-      } else {
-        drush_log("Batch call to the Handle System is complete but no log file was generated?", 'error');
-      }
-    }
-
-    // Delete the temporary batch command file and log file.
-    if (file_exists($fileName)) { unlink($fileName); }
-    if (file_exists($logFile)) { unlink($logFile); }
-    if (file_exists("$log.tmp")) { unlink("$log.tmp"); }
-
-    // Done.
-    $finish = date('H:i:s');
-    drush_log("Completed $count 'iduHandle - $handle_op' operations at $finish. \n", 'status');
   }
+
+  // Done.
+  $finish = date('H:i:s');
+  drush_log("Completed $count 'iduHandle - $handle_op' operations at $finish. \n", 'status');
+
+  // If one or more handles were created there should be a batch file to process.  Do that now.
+  if ($count > 0) {
+    $fileName = 'temporary://'.H_BATCH;
+    $logFile = 'temporary://'.H_LOG;
+    if (!file_exists($fileName)) { die("Could not find existing batch file $fileName!  "); }
+    if (!$file = fopen($fileName, 'r')) { die("Could not open existing batch file $fileName to read!  "); }
+
+    $path = drupal_realpath($fileName);
+    $log = drupal_realpath($logFile);
+
+    // Build a call to the batch file and run it.
+    $output = array( );
+    $command = H_BINDIR."/hdl-genericbatch $path $log.tmp -verbose";
+    exec($command, $output, $return_status);
+
+    // Keep a timestamped copy of the log file.
+    if (file_exists("$log.tmp")) {
+      $newLog = 'temporary://'.H_LOG.time( );
+      file_put_contents($newLog, file_get_contents($log));
+      file_put_contents($newLog, file_get_contents("$log.tmp"), FILE_APPEND);
+      drush_log("Batch call to the Handle System is complete. A copy of the composite log file is stored in '$newLog'.", 'status');
+    } else {
+      drush_log("Batch call to the Handle System is complete but no log file was generated?", 'error');
+    }
+  }
+
+  // Delete the temporary batch command file and log file.
+  if (file_exists($fileName)) { unlink($fileName); }
+  if (file_exists($logFile)) { unlink($logFile); }
+  if (file_exists("$log.tmp")) { unlink("$log.tmp"); }
+
+  // Done.
+  $finish = date('H:i:s');
+  drush_log("Completed $count 'iduHandle - $handle_op' operations at $finish. \n", 'status');
+}
 
 
 /**
@@ -989,11 +989,11 @@ function idu_drush_fix_CModelToMODS($pid) {
 
   // Find the target MODS element, if any.
   $dx->registerNamespace($mods_ns, $mods_nsU);
-  $parents = $dx->query("/mods/extension");
+  $parents = $dx->query("/mods:mods/mods:extension");
 
   foreach ($parents as $parent) {         // There should be only ONE!
     // Now look for mods:CModel...
-    $target = $dx->query("/mods/extension/CModel");
+    $target = $dx->query("/mods:mods/mods:extension/mods:CModel");
 
     // ...If not there append a new element to $parent.
     if ($target->length === 0) {
@@ -1003,7 +1003,7 @@ function idu_drush_fix_CModelToMODS($pid) {
       $total += 1;
       $object['MODS']->setContentFromString($content);
 
-    // ...If CModel already exists, do nothing (@TODO...fix this?)
+      // ...If CModel already exists, do nothing (@TODO...fix this?)
     } else {
       $total += 0;
     }
@@ -1711,58 +1711,58 @@ function idu_drush_fix_MakeFamily($pid) {
   return 0;
 }
 
-  /* Determine the parent PID and sequence number for the new addition...
+/* Determine the parent PID and sequence number for the new addition...
 
-  $parentPID = $data['parent_pid'];
-  $num = $data['child_count'];
-  $next = $num + 1;
+$parentPID = $data['parent_pid'];
+$num = $data['child_count'];
+$next = $num + 1;
 
-  // If we have a legitimate parent with at least one child, open the object's
-  // RELS-EXT and attach it to the parent.
+// If we have a legitimate parent with at least one child, open the object's
+// RELS-EXT and attach it to the parent.
 
-  if ($parentPID && $num > 0) {
-    $rx = $object['RELS-EXT'];
-    $xml = new DOMDocument;
-    $xml->loadXML($rx->content);
-    $dx = new DOMXPath($xml);
+if ($parentPID && $num > 0) {
+  $rx = $object['RELS-EXT'];
+  $xml = new DOMDocument;
+  $xml->loadXML($rx->content);
+  $dx = new DOMXPath($xml);
 
-    // Find the rdf:RDF/rdf:Description...the parent of our new elements.
+  // Find the rdf:RDF/rdf:Description...the parent of our new elements.
 
-    $parents = $dx->query("/rdf:RDF/rdf:Description");
-    $element1 = $xml->createElement("fedora:isConstituentOf");
-    $attr = $xml->createAttribute("rdf:resource");
-    $attr->value = "info:fedora/" . $parentPID;
-    $element1->appendChild($attr);
-    $parent_PID = str_replace(":", "_", $parentPID);
-    $element2 = $xml->createElement("islandora:isSequenceNumberOf" . $parent_PID, $next);
+  $parents = $dx->query("/rdf:RDF/rdf:Description");
+  $element1 = $xml->createElement("fedora:isConstituentOf");
+  $attr = $xml->createAttribute("rdf:resource");
+  $attr->value = "info:fedora/" . $parentPID;
+  $element1->appendChild($attr);
+  $parent_PID = str_replace(":", "_", $parentPID);
+  $element2 = $xml->createElement("islandora:isSequenceNumberOf" . $parent_PID, $next);
 
-    foreach ($parents as $parent) {
-      $parent->appendChild($element1);
-      $parent->appendChild($element2);
-      $content = $xml->saveXML();
-      $object['RELS-EXT']->setContentFromString($content);
-      return 1;
-      break;
-    }
-    return 0;
+  foreach ($parents as $parent) {
+    $parent->appendChild($element1);
+    $parent->appendChild($element2);
+    $content = $xml->saveXML();
+    $object['RELS-EXT']->setContentFromString($content);
+    return 1;
+    break;
   }
   return 0;
 }
+return 0;
+}
 
 /**
- * Drush idu_fix_* function to add a sibling object to an existing parent.
- *
- * Invoke this function with an iduF process using a command of the form:
- *   drush iduF $pids MakeSibling --sibling=<sibling PID>
- *
- * Applicable options are:
- *   --sibling=<PID of one child object>  Defaults to NULL.
- *
- * @param string $pid
- *   The PID (from the list of first-to-last) to operate on.
- * @return int
- *   The number of children added, or zero if none.
- */
+* Drush idu_fix_* function to add a sibling object to an existing parent.
+*
+* Invoke this function with an iduF process using a command of the form:
+*   drush iduF $pids MakeSibling --sibling=<sibling PID>
+*
+* Applicable options are:
+*   --sibling=<PID of one child object>  Defaults to NULL.
+*
+* @param string $pid
+*   The PID (from the list of first-to-last) to operate on.
+* @return int
+*   The number of children added, or zero if none.
+*/
 function idu_drush_fix_MakeSibling($pid) {
 
   // For any exception, report and skip this PID
@@ -2375,8 +2375,7 @@ function idu_drush_fix_SelfTransform($pid) {
  *
  *   drush iduF grinnell:501 Thumbnail --image="public://audio_thumbnail.jpg"
  *
- * Only the --image option is applicable to this operation and it defaults to
- * public://ImageNotAvailableTIFF_TN.jpg
+ * Only the --image option is applicable to this operation and it defaults to public://ImageNotAvailableTIFF_TN.jpg
  * if omitted.
  *
  * @param string $pid
@@ -2581,19 +2580,20 @@ function idu_drush_fix_UpdateDC($pid) {
       $mx = new DOMXPath($xml);
       $mx->registerNamespace($mods_ns, $mods_nsU);
 
+
       // Find the /name parent of our target element.
-      $parents = $mx->query("/mods/name");
+      $parents = $mx->query("/mods:mods/mods:name");
       foreach ($parents as $parent) {
         // Now look for /name/namePart[not(@*))]... if not there see if we have a valid @type='family' and @type='given' to derive one from;
-        $target = $mx->query("/mods/name/namePart[not(@*)]");
+        $target = $mx->query("/mods:mods/mods:name/mods:namePart[not(@*)]");
         if ($target->length === 0) {
-          $family = $mx->query("/mods/name/namePart[@type='family']");
+          $family = $mx->query("/mods:mods/mods:name/mods:namePart[@type='family']");
           if ($family->length > 0) {
             foreach ($family as $f) {
               $name = $f->nodeValue;
               break;
             }
-            $given = $mx->query("/mods/name/namePart[@type='given']");
+            $given = $mx->query("/mods:mods/mods:name/mods:namePart[@type='given']");
             if ($given->length > 0) {
               foreach ($given as $g) {
                 $name .= ', ' . $g->nodeValue;
@@ -2611,7 +2611,7 @@ function idu_drush_fix_UpdateDC($pid) {
         }
 
         // Now look for /name/role/roleTerm[not(@*))]... and if not there add a type="text" attribute.
-        $targets = $mx->query("/mods/name/role/roleTerm[not(@*)]");
+        $targets = $mx->query("/mods:mods/mods:name/mods:role/mods:roleTerm[not(@*)]");
         foreach ($targets as $target) {
           $type = $xml->createAttribute('type');
           $type->value = 'text';
@@ -2620,7 +2620,7 @@ function idu_drush_fix_UpdateDC($pid) {
           $total += 1;
           $object['MODS']->setContentFromString($content);
         }
-       // break;
+        // break;
       }
     }
   }
@@ -2701,11 +2701,11 @@ function idu_drush_fix_UpdateDC($pid) {
   $mx = new DOMXPath($xml);
   $mx->registerNamespace($mods_ns, $mods_nsU);
 
-  $parents = $mx->query("/mods/extension");
+  $parents = $mx->query("/mods:mods/mods:extension");
 
   // Make sure we have one /mods/extension field.
   if ($parents->length === 0) {
-    $parents = $mx->query("/mods");
+    $parents = $mx->query("/mods:mods");
     foreach ($parents as $parent) {
       $new = $xml->createElement("extension");
       $parent->appendChild($new);
@@ -2729,10 +2729,10 @@ function idu_drush_fix_UpdateDC($pid) {
     $mx = new DOMXPath($xml);
     $mx->registerNamespace($mods_ns, $mods_nsU);
 
-    $parents = $mx->query("/mods/extension");
+    $parents = $mx->query("/mods:mods/mods:extension");
 
     foreach ($parents as $parent) {         // There should be only ONE!
-      $target = $mx->query("/mods/extension/creators");
+      $target = $mx->query("/mods:mods/mods:extension/mods:creators");
       $val = idu_build_creators_element($object);
 
       // No /creators...create one.
@@ -2744,7 +2744,7 @@ function idu_drush_fix_UpdateDC($pid) {
         $object['MODS']->setContentFromString($content);
         break;
 
-      // We already have a /creators... make sure it is up-to-date
+        // We already have a /creators... make sure it is up-to-date
       } else {
         foreach ($target as $t) {
           if ($t->nodeValue === "0" || $t->nodeValue === "") {
@@ -2768,10 +2768,10 @@ function idu_drush_fix_UpdateDC($pid) {
   $xml->loadXML($object['MODS']->content);
   $mx = new DOMXPath($xml);
   $mx->registerNamespace($mods_ns, $mods_nsU);
-  $parents = $mx->query("/mods/extension");
+  $parents = $mx->query("/mods:mods/mods:extension");
 
   foreach ($parents as $parent) {         // There should be only ONE!
-    $target = $mx->query("/mods/extension/primarySort");
+    $target = $mx->query("/mods:mods/mods:extension/mods:primarySort");
 
     if ($target->length === 0) {
       $val = ($collection ? 0 : 1);
