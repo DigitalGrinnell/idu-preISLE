@@ -2375,7 +2375,8 @@ function idu_drush_fix_SelfTransform($pid) {
  *
  *   drush iduF grinnell:501 Thumbnail --image="public://audio_thumbnail.jpg"
  *
- * Only the --image option is applicable to this operation and it defaults to public://ImageNotAvailableTIFF_TN.jpg
+ * Only the --image option is applicable to this operation and it defaults to
+ * public://ImageNotAvailableTIFF_TN.jpg
  * if omitted.
  *
  * @param string $pid
@@ -2560,7 +2561,7 @@ function idu_drush_fix_UpdateDC($pid) {
   static $mods_ns = 'mods';
   static $mods_nsU = 'http://www.loc.gov/mods/v3';
 
-  define('COLLECTION_MODS', "<mods xmlns='http://www.loc.gov/mods/v3' xmlns:mods='http://www.loc.gov/mods/v3' xmlns:xlink='http://www.w3.org/1999/xlink' xmlns:xsi='http://www.w3.org/2001/XMLSchema-instance'><titleInfo><title>xxx</title></titleInfo><extension><primarySort>0</primarySort></extension></mods>");
+  define('COLLECTION_MODS', "<mods xmlns='http://www.loc.gov/mods/v3' xmlns:mods='http://www.loc.gov/mods/v3' xmlns:xlink='http://www.w3.org/1999/xlink' xmlns:xsi='http://www.w3.org/2001/XMLSchema-instance'><titleInfo><title>xxx</title></titleInfo><extension><primarySort>99</primarySort></extension></mods>");
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
@@ -2579,7 +2580,6 @@ function idu_drush_fix_UpdateDC($pid) {
       $xml->loadXML($mods->content);
       $mx = new DOMXPath($xml);
       $mx->registerNamespace($mods_ns, $mods_nsU);
-
 
       // Find the /name parent of our target element.
       $parents = $mx->query("/mods/name");
