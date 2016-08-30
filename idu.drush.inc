@@ -2,14 +2,14 @@
 
 /**
  * Some available drush functions...
- *
+ * 
  * drush_log('Log an event using drush', 'warning');
  * drush_set_error('Set an error with drush.');
  * t('Translate strings with drush');
  * drush_print('Print to command line with drush');
  * drush_print_table($rows, TRUE); //print a command line table with drush
  * drush_confirm('Are you sure you want to continue?', $indent = 0); //Add drush confirmation
- *
+ * 
  */
 
 /**
@@ -52,6 +52,11 @@ function idu_drush_command( ) {
           MODS records have a valid /name/namePart[not(@*)] element.
 
       --- The commands which follow are never automatically executed ---
+      
+      AddDatastream -
+        Adds the --dsid datastream with --title and --contents to an existing
+          object.  --dsid defaults to 'WF', --title defaults to
+          'Islandora Webforms List' and --contents defaults to ' 1934660 '.
 
       ChangeText -
         Changes --find text to --replace either in general or within the
@@ -81,10 +86,9 @@ function idu_drush_command( ) {
           specified by --convert or --compress.
 
       CopyDatastream -
-        Copies the named --dsid datastream to one named --replace, and if
-          --self is specified, runs the self transform on the original
-          datastream.
-
+        Copies the named --dsid datastream from a specified --parent object to
+          the target object.  
+          
       CorrectCollections -
         Corrects collection assignments including removal of duplicate 
           collection relationships, and removal of --retire collection 
@@ -145,6 +149,11 @@ function idu_drush_command( ) {
         Applies a 'relaxed' POLICY to an object to make it visible
           to all.
 
+      RenameDatastream -
+        Changes the DSID of the named --dsid datastream to one named 
+          --replace, and if --self is specified, runs the self transform on 
+          the datastream.
+
       ReportChildDuplicates -
         Echo the MODS elements of a child object that are duplicated in its 
         parent.
@@ -196,7 +205,7 @@ function idu_drush_command( ) {
       'substitutionsFile' => t("In place of 'find' and 'replace', this option specifies the path to a 'csv' style file from which 'find, replace' pairs will be read.\n"),
       'title'     => t("Specifies a title or label when needed. Default varies by use.\n"),
       'xpath'     => t("Specifies a metadata XPath whenever one is needed. Note that it is wise to put your XPath in double quotes and use single quotes within where necessary.\n"),
-      'xsl'       => t("Specifies the path to the MODS-to-DC transform XSL file to be applied. Defaults to public://mods_to_dc_grinnell-modified-2014-09-24.xsl.\n"),
+      'xsl'       => t("Specifies the path to the MODS-to-DC transform XSL file to be applied. Defaults to public://mods_to_dc_grinnell.xsl.\n"),
     ),
     'examples' => array(
       'Example' => "drush iduF grinnell:10000 ChangeText --dsid=MODS --xpath=\"/mods/relatedItem/identifier[@type='uri']\"",
@@ -510,84 +519,84 @@ function drush_idu_iduFix($first, $fix) {
 
 }
 
-/**
- * Callback function for drush iduHandle, alias iduH.
- *
- * This callback runs the prescribed Handle command for a given PID with an optional --repeat
- * to touch subsequent objects in the same namespace.  Functions called must be of the form...
- *     $count = drush_idu_handle_OPERATION($pid);
- *
- * @param string $first
- *   First PID to process.
- * @param string $handle_op
- *   The Handle operation to be performed.  This string completes the name of an existing idu_drush_handle_* function.
- */
-function drush_idu_iduHandle($first, $handle_op) {
+  /**
+   * Callback function for drush iduHandle, alias iduH.
+   *
+   * This callback runs the prescribed Handle command for a given PID with an optional --repeat
+   * to touch subsequent objects in the same namespace.  Functions called must be of the form...
+   *     $count = drush_idu_handle_OPERATION($pid);
+   *
+   * @param string $first
+   *   First PID to process.
+   * @param string $handle_op
+   *   The Handle operation to be performed.  This string completes the name of an existing idu_drush_handle_* function.
+   */
+  function drush_idu_iduHandle($first, $handle_op) {
 
-  // Get the Handle operation parameter...
-  $function = 'idu_drush_Handle_'.$handle_op;
-  if (!function_exists($function)) { drush_log("The specified Handle function '$function' does not exist!", 'error'); }
+    // Get the Handle operation parameter...
+    $function = 'idu_drush_Handle_'.$handle_op;
+    if (!function_exists($function)) { drush_log("The specified Handle function '$function' does not exist!", 'error'); }
 
-  if (!$pids = idu_drush_prep($first, $last, $pidn, $range, $ns, TRUE)) { return; }     // Get the PIDs and initialize the loop...
+    if (!$pids = idu_drush_prep($first, $last, $pidn, $range, $ns, TRUE)) { return; }     // Get the PIDs and initialize the loop...
 
-  idu_drush_print_progress("iduHandle - $handle_op");
-  $count = 0;
+    idu_drush_print_progress("iduHandle - $handle_op");
+    $count = 0;
 
-  // If there's only one PID... process it.
-  if (count($pids) === 1) {
-    $count += call_user_func($function, $pids[0]);
-    idu_drush_post_to_file("iduHandle - $handle_op: $pids[0] complete.", NULL, 'public://iduHandle_progress.log');
-    idu_drush_print_progress("iduHandle - $handle_op", 0, 1);
+    // If there's only one PID... process it.
+    if (count($pids) === 1) {
+      $count += call_user_func($function, $pids[0]);
+      idu_drush_post_to_file("iduHandle - $handle_op: $pids[0] complete.", NULL, 'public://iduHandle_progress.log');
+      idu_drush_print_progress("iduHandle - $handle_op", 0, 1);
 
-    // Operate on a range of PID numbers.
-  } else {
-    $i = 0;
-    foreach ($pids as $pid) {
-      $count += call_user_func($function, $pid);
-      idu_drush_post_to_file("iduHandle - $handle_op: $pid complete.", NULL, 'public://iduHandle_progress.log');
-      idu_drush_print_progress("iduHandle - $handle_op", $i, $range);
-    }
-  }
-
-  // Done.
-  $finish = date('H:i:s');
-  drush_log("Completed $count 'iduHandle - $handle_op' operations at $finish. \n", 'status');
-
-  // If one or more handles were created there should be a batch file to process.  Do that now.
-  if ($count > 0) {
-    $fileName = 'temporary://'.H_BATCH;
-    $logFile = 'temporary://'.H_LOG;
-    if (!file_exists($fileName)) { die("Could not find existing batch file $fileName!  "); }
-    if (!$file = fopen($fileName, 'r')) { die("Could not open existing batch file $fileName to read!  "); }
-
-    $path = drupal_realpath($fileName);
-    $log = drupal_realpath($logFile);
-
-    // Build a call to the batch file and run it.
-    $output = array( );
-    $command = H_BINDIR."/hdl-genericbatch $path $log.tmp -verbose";
-    exec($command, $output, $return_status);
-
-    // Keep a timestamped copy of the log file.
-    if (file_exists("$log.tmp")) {
-      $newLog = 'temporary://'.H_LOG.time( );
-      file_put_contents($newLog, file_get_contents($log));
-      file_put_contents($newLog, file_get_contents("$log.tmp"), FILE_APPEND);
-      drush_log("Batch call to the Handle System is complete. A copy of the composite log file is stored in '$newLog'.", 'status');
+      // Operate on a range of PID numbers.
     } else {
-      drush_log("Batch call to the Handle System is complete but no log file was generated?", 'error');
+      $i = 0;
+      foreach ($pids as $pid) {
+        $count += call_user_func($function, $pid);
+        idu_drush_post_to_file("iduHandle - $handle_op: $pid complete.", NULL, 'public://iduHandle_progress.log');
+        idu_drush_print_progress("iduHandle - $handle_op", $i, $range);
+      }
     }
+
+    // Done.
+    $finish = date('H:i:s');
+    drush_log("Completed $count 'iduHandle - $handle_op' operations at $finish. \n", 'status');
+
+    // If one or more handles were created there should be a batch file to process.  Do that now.
+    if ($count > 0) {
+      $fileName = 'temporary://'.H_BATCH;
+      $logFile = 'temporary://'.H_LOG;
+      if (!file_exists($fileName)) { die("Could not find existing batch file $fileName!  "); }
+      if (!$file = fopen($fileName, 'r')) { die("Could not open existing batch file $fileName to read!  "); }
+
+      $path = drupal_realpath($fileName);
+      $log = drupal_realpath($logFile);
+
+      // Build a call to the batch file and run it.
+      $output = array( );
+      $command = H_BINDIR."/hdl-genericbatch $path $log.tmp -verbose";
+      exec($command, $output, $return_status);
+
+      // Keep a timestamped copy of the log file.
+      if (file_exists("$log.tmp")) {
+        $newLog = 'temporary://'.H_LOG.time( );
+        file_put_contents($newLog, file_get_contents($log));
+        file_put_contents($newLog, file_get_contents("$log.tmp"), FILE_APPEND);
+        drush_log("Batch call to the Handle System is complete. A copy of the composite log file is stored in '$newLog'.", 'status');
+      } else {
+        drush_log("Batch call to the Handle System is complete but no log file was generated?", 'error');
+      }
+    }
+
+    // Delete the temporary batch command file and log file.
+    if (file_exists($fileName)) { unlink($fileName); }
+    if (file_exists($logFile)) { unlink($logFile); }
+    if (file_exists("$log.tmp")) { unlink("$log.tmp"); }
+
+    // Done.
+    $finish = date('H:i:s');
+    drush_log("Completed $count 'iduHandle - $handle_op' operations at $finish. \n", 'status');
   }
-
-  // Delete the temporary batch command file and log file.
-  if (file_exists($fileName)) { unlink($fileName); }
-  if (file_exists($logFile)) { unlink($logFile); }
-  if (file_exists("$log.tmp")) { unlink("$log.tmp"); }
-
-  // Done.
-  $finish = date('H:i:s');
-  drush_log("Completed $count 'iduHandle - $handle_op' operations at $finish. \n", 'status');
-}
 
 
 /**
@@ -988,6 +997,8 @@ function idu_drush_fix_CModelToMODS($pid) {
   $dx = new DOMXPath($xml);
 
   // Find the target MODS element, if any.
+  static $mods_ns = 'mods';
+  static $mods_nsU = 'http://www.loc.gov/mods/v3';
   $dx->registerNamespace($mods_ns, $mods_nsU);
   $parents = $dx->query("/mods:mods/mods:extension");
 
@@ -1003,7 +1014,7 @@ function idu_drush_fix_CModelToMODS($pid) {
       $total += 1;
       $object['MODS']->setContentFromString($content);
 
-      // ...If CModel already exists, do nothing (@TODO...fix this?)
+    // ...If CModel already exists, do nothing (@TODO...fix this?)
     } else {
       $total += 0;
     }
@@ -1300,66 +1311,6 @@ function idu_drush_fix_ConvertTIFtoJP2($pid, $preOpts=NULL) {
 }
 
 /**
- * Drush idu_fix_* function to copy a specified datastream to a new label.
- *
- * Invoke this function with an iduF process using a command of the form:
- *   drush iduF $pids --dsid=OLD --replace=NEW  --self=public://cleanup_mods_and_reorder.xsl
- *
- * Applicable options are:
- *   --self=<path to the self-transform XSL file>  Defaults to public://cleanup_mods_and_reorder.xsl
- *   --dsid=The existing datastream ID such as 'MODS', 'MADS' or 'DC'.  Defaults to 'MODS'.
- *   --replace=The new (copy) datastream ID such as 'MODS_BACKUP'.  Defaults to NULL.
- *
- * @param string $pid
- *   The PID (from the list of first-to-last) to operate on.
- * @return int
- *   The number of repair operations performed, or zero if none.
- */
-function idu_drush_fix_CopyDatastream($pid) {
-
-  // For any exception, report and skip this PID
-  if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
-    return 0;
-  }
-
-  // Check that the specified datastream exists... if not, we're done.
-  $dsid = drush_get_option('dsid', 'MODS');
-  if (!$ds = $object[$dsid]) { return 0; }
-
-  if (!$replace = drush_get_option('replace', NULL)) {
-    drush_log("A --replace datastream name MUST be specified in the command.", 'error');
-    return 0;
-  };
-
-  // Make the new datastream copy.  Assume it is a text/xml DS.
-  $newDS = idu_copy_datastream($object, $dsid, 'text/xml', 'X', $replace);
-  $object->ingestDatastream($newDS);
-
-  // Get the specified self-transform, if any.
-  if ($transform = drush_get_option('self', "public://cleanup_mods.xsl")) {
-    $xsl = new DOMDocument();
-    if (!$xsl->load($transform)) {
-      die("Failed to load Transform file '$transform!'");
-    }
-    $xslt = new XSLTProcessor();
-    $xslt->importStyleSheet($xsl);
-
-    // Apply it to the $ds content.
-    $document = DOMDocument::loadXml($object[$dsid]->content);
-    if ($doc = $xslt->transformToDoc($document)) {
-      $after = $doc->saveXML();
-      $object[$dsid]->setContentFromString($after);
-    }
-
-    // Re-index this object in Solr.
-    idu_drush_update_solr_index($pid);
-  }
-
-  return 1;
-}
-
-/**
  * Drush idu_fix_* function to apply MODS self-transform and MODS-to-DC transforms to an existing object.
  *
  * Invoke this function with an iduF process using a command of the form:
@@ -1367,7 +1318,7 @@ function idu_drush_fix_CopyDatastream($pid) {
  *
  * Applicable options are:
  *   --self=<path to the MODS self-transform XSL file>  Defaults to public://cleanup_mods_and_reorder.xsl
- *   --xsl=<path to the MODS-to-DC transform XSL file>  Defaults to public://mods_to_dc_grinnell-modified-2015-04-03.xsl
+ *   --xsl=<path to the MODS-to-DC transform XSL file>  Defaults to public://mods_to_dc_grinnell.xsl
  *
  * @param string $pid
  *   The PID (from the list of first-to-last) to operate on.
@@ -1404,7 +1355,7 @@ function idu_drush_fix_DCTransform($pid) {
 
   // Now, get the MODS-to-DC transform.
   $xsl = new DOMDocument( );
-  $transform = drush_get_option('xsl', 'public://mods_to_dc_grinnell-modified-2015-04-03.xsl');
+  $transform = drush_get_option('xsl', 'public://mods_to_dc_grinnell.xsl');
   if (!$xsl->load($transform)) { die("Failed to load Transform file '$transform!'"); }
   $xslt = new XSLTProcessor( );
   $xslt->importStyleSheet($xsl);
@@ -1711,58 +1662,58 @@ function idu_drush_fix_MakeFamily($pid) {
   return 0;
 }
 
-/* Determine the parent PID and sequence number for the new addition...
+  /* Determine the parent PID and sequence number for the new addition...
 
-$parentPID = $data['parent_pid'];
-$num = $data['child_count'];
-$next = $num + 1;
+  $parentPID = $data['parent_pid'];
+  $num = $data['child_count'];
+  $next = $num + 1;
 
-// If we have a legitimate parent with at least one child, open the object's
-// RELS-EXT and attach it to the parent.
+  // If we have a legitimate parent with at least one child, open the object's
+  // RELS-EXT and attach it to the parent.
 
-if ($parentPID && $num > 0) {
-  $rx = $object['RELS-EXT'];
-  $xml = new DOMDocument;
-  $xml->loadXML($rx->content);
-  $dx = new DOMXPath($xml);
+  if ($parentPID && $num > 0) {
+    $rx = $object['RELS-EXT'];
+    $xml = new DOMDocument;
+    $xml->loadXML($rx->content);
+    $dx = new DOMXPath($xml);
 
-  // Find the rdf:RDF/rdf:Description...the parent of our new elements.
+    // Find the rdf:RDF/rdf:Description...the parent of our new elements.
 
-  $parents = $dx->query("/rdf:RDF/rdf:Description");
-  $element1 = $xml->createElement("fedora:isConstituentOf");
-  $attr = $xml->createAttribute("rdf:resource");
-  $attr->value = "info:fedora/" . $parentPID;
-  $element1->appendChild($attr);
-  $parent_PID = str_replace(":", "_", $parentPID);
-  $element2 = $xml->createElement("islandora:isSequenceNumberOf" . $parent_PID, $next);
+    $parents = $dx->query("/rdf:RDF/rdf:Description");
+    $element1 = $xml->createElement("fedora:isConstituentOf");
+    $attr = $xml->createAttribute("rdf:resource");
+    $attr->value = "info:fedora/" . $parentPID;
+    $element1->appendChild($attr);
+    $parent_PID = str_replace(":", "_", $parentPID);
+    $element2 = $xml->createElement("islandora:isSequenceNumberOf" . $parent_PID, $next);
 
-  foreach ($parents as $parent) {
-    $parent->appendChild($element1);
-    $parent->appendChild($element2);
-    $content = $xml->saveXML();
-    $object['RELS-EXT']->setContentFromString($content);
-    return 1;
-    break;
+    foreach ($parents as $parent) {
+      $parent->appendChild($element1);
+      $parent->appendChild($element2);
+      $content = $xml->saveXML();
+      $object['RELS-EXT']->setContentFromString($content);
+      return 1;
+      break;
+    }
+    return 0;
   }
   return 0;
 }
-return 0;
-}
 
 /**
-* Drush idu_fix_* function to add a sibling object to an existing parent.
-*
-* Invoke this function with an iduF process using a command of the form:
-*   drush iduF $pids MakeSibling --sibling=<sibling PID>
-*
-* Applicable options are:
-*   --sibling=<PID of one child object>  Defaults to NULL.
-*
-* @param string $pid
-*   The PID (from the list of first-to-last) to operate on.
-* @return int
-*   The number of children added, or zero if none.
-*/
+ * Drush idu_fix_* function to add a sibling object to an existing parent.
+ *
+ * Invoke this function with an iduF process using a command of the form:
+ *   drush iduF $pids MakeSibling --sibling=<sibling PID>
+ *
+ * Applicable options are:
+ *   --sibling=<PID of one child object>  Defaults to NULL.
+ *
+ * @param string $pid
+ *   The PID (from the list of first-to-last) to operate on.
+ * @return int
+ *   The number of children added, or zero if none.
+ */
 function idu_drush_fix_MakeSibling($pid) {
 
   // For any exception, report and skip this PID
@@ -2198,6 +2149,68 @@ function idu_drush_fix_Relax($pid, $options=NULL) {
 }
 
 /**
+ * Drush idu_fix_* function to rename a specified datastream to a new label.
+ *
+ * Invoke this function with an iduF process using a command of the form:
+ *   drush iduF $pids RenameDatastream --dsid=OLD --replace=NEW
+ *      --self=public://cleanup_mods_and_reorder.xsl
+ *
+ * Applicable options are:
+ *   --self=<path to the self-transform XSL file>  Defaults to public://cleanup_mods_and_reorder.xsl
+ *   --dsid=The existing datastream ID such as 'MODS', 'MADS' or 'DC'.  Defaults to 'MODS'.
+ *   --replace=The new (copy) datastream ID such as 'MODS_BACKUP'.  Defaults to NULL.
+ *
+ * @param string $pid
+ *   The PID (from the list of first-to-last) to operate on.
+ * @return int
+ *   The number of repair operations performed, or zero if none.
+ */
+function idu_drush_fix_RenameDatastream($pid) {
+
+  // For any exception, report and skip this PID
+  if (!$object = _idu_Repository()->getObject($pid)) {
+    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    return 0;
+  }
+
+  // Check that the specified datastream exists... if not, we're done.
+  $dsid = drush_get_option('dsid', 'MODS');
+  if (!$ds = $object[$dsid]) { return 0; }
+
+  if (!$replace = drush_get_option('replace', NULL)) {
+    drush_log("A --replace datastream name MUST be specified in the command.", 'error');
+    return 0;
+  };
+
+  // Make the new datastream copy.  Assume it is a text/xml DS.
+  $newDS = idu_copy_datastream($object, $dsid, 'text/xml', 'X', $replace);
+  $object->ingestDatastream($newDS);
+
+  // Get the specified self-transform, if any.
+  if ($transform = drush_get_option('self', "public://cleanup_mods.xsl")) {
+    $xsl = new DOMDocument();
+    if (!$xsl->load($transform)) {
+      die("Failed to load Transform file '$transform!'");
+    }
+    $xslt = new XSLTProcessor();
+    $xslt->importStyleSheet($xsl);
+
+    // Apply it to the $ds content.
+    $document = DOMDocument::loadXml($object[$dsid]->content);
+    if ($doc = $xslt->transformToDoc($document)) {
+      $after = $doc->saveXML();
+      $object[$dsid]->setContentFromString($after);
+    }
+
+    // Re-index this object in Solr.
+    idu_drush_update_solr_index($pid);
+  }
+
+  return 1;
+}
+
+
+/**
  * Drush idu_fix_* function to REPORT data from a child object's MODS record
  * if it is duplicated in the parent's MODS record.
  *
@@ -2280,7 +2293,7 @@ function idu_drush_fix_ReportChildDuplicates($pid) {
 
   // Now, get the MODS-to-DC transform.
   $xsl = new DOMDocument( );
-  $transform = drush_get_option('xsl', 'public://mods_to_dc_grinnell-modified-2015-04-03.xsl');
+  $transform = drush_get_option('xsl', 'public://mods_to_dc_grinnell.xsl');
   if (!$xsl->load($transform)) { die("Failed to load Transform file '$transform!'"); }
   $xslt = new XSLTProcessor( );
   $xslt->importStyleSheet($xsl);
@@ -2580,7 +2593,6 @@ function idu_drush_fix_UpdateDC($pid) {
       $mx = new DOMXPath($xml);
       $mx->registerNamespace($mods_ns, $mods_nsU);
 
-
       // Find the /name parent of our target element.
       $parents = $mx->query("/mods:mods/mods:name");
       foreach ($parents as $parent) {
@@ -2620,7 +2632,7 @@ function idu_drush_fix_UpdateDC($pid) {
           $total += 1;
           $object['MODS']->setContentFromString($content);
         }
-        // break;
+       // break;
       }
     }
   }
@@ -2744,7 +2756,7 @@ function idu_drush_fix_UpdateDC($pid) {
         $object['MODS']->setContentFromString($content);
         break;
 
-        // We already have a /creators... make sure it is up-to-date
+      // We already have a /creators... make sure it is up-to-date
       } else {
         foreach ($target as $t) {
           if ($t->nodeValue === "0" || $t->nodeValue === "") {
@@ -3021,15 +3033,18 @@ function idu_drush_special_PrintRI($pid) {
  *
  */
 function idu_build_creators_element($object) {
+  static $mods_ns = 'mods';
+  static $mods_nsU = 'http://www.loc.gov/mods/v3';
 
   // Check for a MODS datastream...
   if ($mods = $object['MODS']) {
     $xml = new DOMDocument;
     $xml->loadXML($mods->content);
     $mx = new DOMXPath($xml);
+    $mx->registerNamespace($mods_ns, $mods_nsU);
 
-    // Find all /mods/name/role/roleTerm[text()='creator' or text()='author' or text()='artist']/../.. and
-    // return the namePart[not(@type)] value.
+    // Find all /mods/name/role/roleTerm[text()='creator' or text()='author' or
+    // text()='artist']/../.. and return the namePart[not(@type)] value.
     $creators = $mx->query("/mods:mods/mods:name/mods:role/mods:roleTerm[text()='creator' or text()='author' or text()='artist']/../../mods:namePart[not(@type)]");
 
     // Return a new string built from creator field values.
