@@ -149,6 +149,15 @@ function idu_drush_command( ) {
         Applies a 'relaxed' POLICY to an object to make it visible
           to all.
 
+      RemoveDatastreams -
+        Removes the named --dsid datastream(s) from an existing object.  Note
+          that in this context --dsid may contain wildcards like the default
+          value of MODS_*. Use --dryRun to count matches only.
+ 
+      RemoveDuplicateElements -
+        Removes duplicate elements from the --dsid datastream of an existing 
+        object.  Use the --dryRun option to report duplicates only.
+
       RenameDatastream -
         Changes the DSID of the named --dsid datastream to one named 
           --replace, and if --self is specified, runs the self transform on 
@@ -2149,6 +2158,121 @@ function idu_drush_fix_Relax($pid, $options=NULL) {
 }
 
 /**
+ * Drush idu_fix_* function to remove specified datastream(s) from an object.
+ *
+ * Invoke this function with an iduF process using a command of the form:
+ *   drush iduF $pids RemoveDatastreams --dsid=MODS_*
+ *
+ * Applicable options are:
+ *   --dsid=The existing datastream ID such as 'MODS' or 'DC'.  This option
+ *      may include a wildcard in this context.  Defaults to 'MODS_*'.
+ *
+ * @param string $pid
+ *   The PID (from the list of first-to-last) to operate on.
+ * @return int
+ *   The number of datastreams removed, or zero if none.
+ */
+function idu_drush_fix_RemoveDatastreams($pid) {
+
+  // For any exception, report and skip this PID
+  if (!$object = _idu_Repository()->getObject($pid)) {
+    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    return 0;
+  }
+
+  // Fetch options.
+  $dsid = drush_get_option('dsid', 'MODS_*');
+  $dryRun = drush_get_option('dryRun', FALSE);
+
+  $count = 0;
+
+  foreach ($object as $key => $datastream) {
+    if (fnmatch($dsid, $datastream->id)) {
+      if (!$dryRun) { unset($object[$key]); }
+      $count++;
+    }
+  }
+
+  return $count;
+}
+
+/**
+ * Drush idu_fix_* function to remove duplicate elements from a specified
+ * object's MODS datastream.
+ *
+ * Invoke this function with an iduF process using a command of the form:
+ *   drush iduF <pids> RemoveDuplicateElements
+ *
+ * @param string $pid
+ *   The PID (from the list of first-to-last) to operate on.
+ * @return int
+ *   The number of duplicate elements removed, or zero if none.
+ */
+function idu_drush_fix_RemoveDuplicateElements($pid) {
+  module_load_include('inc', 'icu', 'icu_drush');
+
+  // For any exception, report and skip this PID
+  if (!$object = _idu_Repository()->getObject($pid)) {
+    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    return 0;
+  }
+
+  // Fetch options.
+  $dsid = drush_get_option('dsid', 'MODS');
+  $dryRun = drush_get_option('dryRun', FALSE);
+
+  // Check for an existing $dsid datastream... if none, we're done.
+  if (!$ds = $object[$dsid]) { return 0; }
+
+  // Fetch an array of all elements from the object's MODS.
+  $xml = new DOMDocument;
+  $xml->loadXML($ds->content);
+  $nodes = $xml->documentElement->childNodes;
+  $elementsA = $elementsB = array( );
+  foreach ($nodes as $node) { $elementsA[] = $node; }
+  foreach ($nodes as $node) { $elementsB[] = $node; }
+  $c = $nodes->length;
+
+  $count = 0;
+
+  // Loop through all DOMElement types and compare with all others.  Report any
+  // EXACT structure, non-blank value duplicates found.
+  for ($a=0; $a<$c; $a++) {
+    $nodeA = $elementsA[$a];
+    $matches = 0;
+    if ($nodeA->nodeType != 1) { continue; }
+    for ($b=$a+1; $b<$c; $b++) {
+      $nodeB = $elementsB[$b];
+      if ($nodeB->nodeType==1 && !is_null($elementsB[$b])) {
+        if (icu_drush_nodes_match($nodeA, $nodeB, TRUE)) {
+          $elementsB[$b] = NULL;
+          $matches++;
+        }
+      }
+    }
+
+    if ($matches > 0) {
+      echo "Object $pid $dsid element '$nodeA->tagName' with value '$nodeA->textContent' has $matches exact duplicates.\n";
+    }
+  }
+
+  // Loop again...backwards.  Remove any NULL $elementsB nodes from the tree.
+  for ($i = $nodes->length; --$i >= 0;) {
+    if (is_null($elementsB[$i])) {
+      $node = $nodes->item($i);
+      if (!$dryRun) { $node->parentNode->removeChild($node); }
+      $count++;
+    }
+  }
+  if ($count > 0 && !$dryRun) {
+    $ds->setContentFromString($xml->saveXML());
+    $object->ingestDatastream($ds);
+  }
+
+  return $count;
+}
+
+/**
  * Drush idu_fix_* function to rename a specified datastream to a new label.
  *
  * Invoke this function with an iduF process using a command of the form:
@@ -2344,10 +2468,11 @@ function idu_drush_fix_SelfTransform($pid) {
   $xslt = new XSLTProcessor( );
   $xslt->importStyleSheet($xsl);
 
-  // Make a new backup datastream copy.  Assume it is a text/xml DS.
+  /* Make a new backup datastream copy.  Assume it is a text/xml DS.   MAM - No need for this,
+    it is creating far too many datastream copies!
   $replace = $dsid . "_" . date('U');
   $newDS = idu_copy_datastream($object, $dsid, 'text/xml', 'X', $replace);
-  $object->ingestDatastream($newDS);
+  $object->ingestDatastream($newDS); */
 
 
   // Apply the transform to the $ds content.

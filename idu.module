@@ -270,6 +270,8 @@ function idu_getPIDs(&$context) {
  *   Returns 0 or 1 indicating the number of handles processed.
  */
 function idu_handle_create_or_modify($object, $op='CREATE', $force=FALSE) {
+  static $mods_ns = 'mods';
+  static $mods_nsU = 'http://www.loc.gov/mods/v3';
 
   $pid = $object->id;
 
@@ -352,9 +354,10 @@ function idu_handle_create_or_modify($object, $op='CREATE', $force=FALSE) {
   // Remove all old handle identifiers and add one new HDL identifier element to the MODS.
   $mods = new DOMDocument( );
   $mods->loadXML($content);
-  $xpath = new DOMXpath($mods);
+  $mx = new DOMXpath($mods);
+  $mx->registerNamespace($mods_ns, $mods_nsU);
 
-  foreach ($xpath->query("/mods:mods/mods:identifier[@type='hdl']") as $node) {
+  foreach ($mx->query("/mods:mods/mods:identifier[@type='hdl']") as $node) {
     $parent = $node->parentNode;
     $parent->removeChild($node);    // remove the old handles
   }
@@ -375,7 +378,7 @@ function idu_handle_create_or_modify($object, $op='CREATE', $force=FALSE) {
 
   // If the object has a 'local' identifier, preserve it.  If not, add the handle as a new local ID.
   $nLocal = 0;
-  foreach ($xpath->query("/mods:mods/mods:identifier[@type='local']") as $node) {
+  foreach ($mx->query("/mods:mods/mods:identifier[@type='local']") as $node) {
     $nLocal++;
   }
 
