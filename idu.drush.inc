@@ -54,8 +54,8 @@ function idu_drush_command( ) {
       --- The commands which follow are never automatically executed ---
       
       AddDatastream -
-        Adds the --dsid datastream with --title and --contents to an existing
-          object.  --dsid defaults to 'WF', --title defaults to
+        Adds the --dsid datastream with --title and --contents to an 
+          existing object.  --dsid defaults to 'WF', --title defaults to
           'Islandora Webforms List' and --contents defaults to ' 1934660 '.
 
       ChangeText -
@@ -86,13 +86,17 @@ function idu_drush_command( ) {
           specified by --convert or --compress.
 
       CopyDatastream -
-        Copies the named --dsid datastream from a specified --parent object to
-          the target object.  
+        Copies the named --dsid datastream from a specified --parent object
+          to the target object.  
           
       CorrectCollections -
         Corrects collection assignments including removal of duplicate 
           collection relationships, and removal of --retire collection 
           references IF other relationships exist.
+
+      DateCreatedFix -
+        Looks for invalid date strings in /mods/originInfo/dateCreated
+          fields and attempts to fix them if the --dryRun option is NOT set.
 
       DCTransform -
         Applies the specified self-transform to an object's MODS then
@@ -101,10 +105,6 @@ function idu_drush_command( ) {
       Derivatives -
         Attempts to regenerate ALL derivatives for an existing object.
         
-      FixDateCreated -
-        Looks for invalid date strings in /mods/originInfo/dateCreated
-          fields and attempts to fix them if the --dryRun option is NOT set.
-
       ImportCSV -
         Reads data, one line at at time, from the named --csv CSV data file
         and passes the line to idu_drush_import( ) for processing.
@@ -139,7 +139,7 @@ function idu_drush_command( ) {
         Deletes the --dsid datastream.  Be careful with this one too!
 
       PurgeElements -
-        Removes all --xpath matched elements from the specified --dsid
+        Removes all --xpath matched elements from the specified --dsid      
           datastream.
 
       PurgeFamily -
@@ -154,7 +154,7 @@ function idu_drush_command( ) {
           to all.
 
       RemoveDatastreams -
-        Removes the named --dsid datastream(s) from an existing object.  Note
+        Removes the named --dsid datastream(s) from an existing object. Note
           that in this context --dsid may contain wildcards like the default
           value of MODS_*. Use --dryRun to count matches only.
  
@@ -782,7 +782,7 @@ function idu_drush_fix_ChangeCompound($pid) {
  * Applicable options include the following:
  *
  *   --substitutionsFile=<file path>  If this option is specified then --find and --replace are ignored and
- *       pairs of find => replace strings are pulled instead from the named file.  Default is NULL.
+ *       pairs of find, replace CSV strings are pulled instead from the named file.  Default is NULL.
  *
  *   --find=<string>  If this option is specified, and --substitutionsFile is not, then the specified string
  *       is searched for in the target datastreams and replaced with values specified in --replace.
@@ -814,11 +814,9 @@ function idu_drush_fix_ChangeText($pid, $options) {
   }
 
   // Get the pre-processed find and replace options.
-
   $findReplace = $options['findReplace'];
 
   // Check for other options...
-
   $dsid = drush_get_option('dsid', 'MODS');
   $xpath = drush_get_option('xpath', NULL);
   $dryRun = drush_get_option('dryRun', FALSE);
@@ -1324,6 +1322,79 @@ function idu_drush_fix_ConvertTIFtoJP2($pid, $preOpts=NULL) {
 }
 
 /**
+ * Drush idu_fix_* function to report and fix (when --dryRun is not set)
+ *   invalid /mods/originInfo/dateCreated values.
+ *
+ * Invoke this function with an iduF process using a command of the form:
+ *   drush iduF <pids> DateCreatedFix
+ *
+ * @param string $pid
+ *   The PID (from the list of first-to-last) to operate on.
+ * @return int
+ *   The number of invalid dateCreated values found (and fixed).
+ */
+function idu_drush_fix_DateCreatedFix($pid) {
+  static $mods_ns = 'mods';
+  static $mods_nsU = 'http://www.loc.gov/mods/v3';
+
+  module_load_include('inc', 'icu', 'icu_drush');
+
+  // For any exception, report and skip this PID
+  if (!$object = _idu_Repository()->getObject($pid)) {
+    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    return 0;
+  }
+
+  // Fetch options.
+  $dryRun = drush_get_option('dryRun', FALSE);
+
+  // Check for an existing MODS datastream... if none, we're done.
+  if (!$ds = $object['MODS']) { return 0; }
+
+  // Fetch the /mods/originInfo/dateCreated value from the object.
+  $xml = new DOMDocument;
+  $xml->loadXML($ds->content);
+  $mx = new DOMXPath($xml);
+  $mx->registerNamespace($mods_ns, $mods_nsU);
+  $count = 0;
+
+  // Find the target element.
+  $target = $mx->query("/mods:mods/mods:originInfo/mods:dateCreated");
+  foreach ($target as $key => $node) {
+    $dateCreated = $node->nodeValue;
+    $trimmed = ltrim($dateCreated,"-");   // trim away any leading negative sign
+
+    if (!$date = strtotime($trimmed)) {
+      echo "Object $pid MODS originInfo/dateCreated element value '$dateCreated' does not appear to be valid!\n";
+      $count++;
+
+      if (!$dryRun) {
+        // Blank the nodeValue.  NO, don't do this!
+        // $node->nodeValue = "";
+
+        // Create a new dateOther element with a displayLabel attribute.
+        $element = $xml->createElement('dateOther', $dateCreated);
+        $attr = $xml->createAttribute('displayLabel');
+        $attr->value = 'Approx. Date of Creation';
+        $element->appendChild($attr);
+
+        // Find the originInfo parent (should be only one) and append dateOther to it.
+        $parents = $mx->query("/mods:mods/mods:originInfo");
+        foreach ($parents as $parent) {
+          $parent->appendChild($element);
+        }
+
+        // Save the changes.
+        $content = $xml->saveXML();
+        $object['MODS']->setContentFromString($content);
+      }
+    }
+  }
+
+  return $count;
+}
+
+/**
  * Drush idu_fix_* function to apply MODS self-transform and MODS-to-DC transforms to an existing object.
  *
  * Invoke this function with an iduF process using a command of the form:
@@ -1497,57 +1568,6 @@ function idu_drush_fix_Derivatives($pid) {
         if ($fit['success']) { ++$count; }
       }
       break;
-  }
-
-  return $count;
-}
-
-
-/**
- * Drush idu_fix_* function to report and fix (when --dryRun is not set)
- *   invalid /mods/originInfo/dateCreated values.
- *
- * Invoke this function with an iduF process using a command of the form:
- *   drush iduF <pids> FixDateCreated
- *
- * @param string $pid
- *   The PID (from the list of first-to-last) to operate on.
- * @return int
- *   The number of invalid dateCreated values found (and fixed).
- */
-function idu_drush_fix_FixDateCreated($pid) {
-  static $mods_ns = 'mods';
-  static $mods_nsU = 'http://www.loc.gov/mods/v3';
-
-  module_load_include('inc', 'icu', 'icu_drush');
-
-      // For any exception, report and skip this PID
-  if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
-    return 0;
-  }
-
-  // Fetch options.
-  $dryRun = drush_get_option('dryRun', FALSE);
-
-  // Check for an existing MODS datastream... if none, we're done.
-  if (!$ds = $object['MODS']) { return 0; }
-
-  // Fetch the /mods/originInfo/dateCreated value from the object.
-  $xml = new DOMDocument;
-  $xml->loadXML($ds->content);
-  $mx = new DOMXPath($xml);
-  $mx->registerNamespace($mods_ns, $mods_nsU);
-  $count = 0;
-
-  // Find the target element.
-  $target = $mx->query("/mods:mods/mods:originInfo/mods:dateCreated");
-  foreach ($target as $key => $node) {
-    $dateCreated = $node->nodeValue;
-    if (!$date = strtotime($dateCreated)) {
-      echo "Object $pid MODS originInfo/dateCreated element value '$dateCreated' does not appear to be valid!\n";
-      $count++;
-    }
   }
 
   return $count;
