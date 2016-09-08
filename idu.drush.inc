@@ -55,8 +55,25 @@ function idu_drush_command( ) {
       
       AddDatastream -
         Adds the --dsid datastream with --title and --contents to an 
-          existing object.  --dsid defaults to 'WF', --title defaults to
-          'Islandora Webforms List' and --contents defaults to ' 1934660 '.
+          existing object.  
+          
+        Option defaults are:
+          dsid=WF,
+          title='Islandora Webforms List',
+          contents=' 1934660 '
+          
+      AddXML -
+        Adds a single XML element named --title, with a value of 
+          --contents, to an existing object's --dsid datastream.  One 
+          element is appended to one existing parent element identified 
+          by --xpath. 
+          
+        Option defaults are:
+          dryRun=FALSE, 
+          dsid=MODS, 
+          xpath=/mods:mods/mods:originInfo,
+          title=dateCreated, and 
+          contents=date('now')
 
       ChangeText -
         Changes --find text to --replace either in general or within the
@@ -159,8 +176,8 @@ function idu_drush_command( ) {
           value of MODS_*. Use --dryRun to count matches only.
  
       RemoveDuplicateElements -
-        Removes duplicate elements from the --dsid datastream of an existing 
-        object.  Use the --dryRun option to report duplicates only.
+        Removes duplicate elements from the --dsid datastream of an existing
+          object.  Use the --dryRun option to report duplicates only.
 
       RenameDatastream -
         Changes the DSID of the named --dsid datastream to one named 
@@ -195,7 +212,7 @@ function idu_drush_command( ) {
       // Options above this line apply to ALL commands.
       'cmodel'    => t("Specifies the target CModel (content model) in the ChangeCompound command.  Defaults to 'islandora/sp_large_image_cmodel'.\n"),
       'compress'  => t("Specifies a file containing Kakadu 'compress' options for the ConvertTIFtoJP2 fix.\n"),
-      'contents'  => t("Specifies text to be included in a datastream.  Default varies by use.\n"),
+      'contents'  => t("Specifies text to be included in a datastream or XML element.  Default varies by use.\n"),
       'convert'   => t("Specifies a file containing ImageMagick 'convert' options for the ConvertTIFtoJP2 fix.\n"),
       'creator'   => t("Specifies a dc:creator value for the UpdateDC fix.  Default is 'Unknown'.\n"),
       'csv'       => t("Specifies the path of a CSV file to be read. Defaults to public://data.csv.\n"),
@@ -216,7 +233,7 @@ function idu_drush_command( ) {
       'sibling'   => t("Specifies the PID of one existing child object in need of a sibling.\n"),
       'source'    => t("Specifies the DC field from which /mods/extension/creators is to be constructed.  Default is 'dc:creator'.\n"),
       'substitutionsFile' => t("In place of 'find' and 'replace', this option specifies the path to a 'csv' style file from which 'find, replace' pairs will be read.\n"),
-      'title'     => t("Specifies a title or label when needed. Default varies by use.\n"),
+      'title'     => t("Specifies a datastream title (label) or XML element value when needed. Default varies by use.\n"),
       'xpath'     => t("Specifies a metadata XPath whenever one is needed. Note that it is wise to put your XPath in double quotes and use single quotes within where necessary.\n"),
       'xsl'       => t("Specifies the path to the MODS-to-DC transform XSL file to be applied. Defaults to public://mods_to_dc_grinnell.xsl.\n"),
     ),
@@ -721,6 +738,75 @@ function idu_drush_fix_AddDatastream($pid) {
   $object->ingestDatastream($newDS);
 
   return 1;
+}
+
+/**
+ * Drush idu_fix_* function to add an XML element to an existing object
+ *   datastream.
+ *
+ * Invoke this function with an iduF process using a command of the form:
+ *   drush iduF <pids> AddXML
+ *
+ * @param string $pid
+ *   The PID (from the list of first-to-last) to operate on.
+ * @return int
+ *   The number of elements added.
+ */
+function idu_drush_fix_AddXML($pid) {
+  static $mods_ns = 'mods';
+  static $mods_nsU = 'http://www.loc.gov/mods/v3';
+
+  module_load_include('inc', 'icu', 'icu_drush');
+
+  // For any exception, report and skip this PID
+  if (!$object = _idu_Repository()->getObject($pid)) {
+    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    return 0;
+  }
+
+  // Fetch options.
+  $dryRun = drush_get_option('dryRun', FALSE);
+  $dsid = drush_get_option('dsid', "MODS");
+  $xpath = drush_get_option('xpath', "/mods:mods/mods:originInfo");
+  $title = drush_get_option('title', "dateCreated");
+  $contents = drush_get_option('contents', date('now'));
+  $replace = drush_get_option('replace', FALSE);
+
+  // Check for an existing $dsid datastream... if none, we're done.
+  if (!$ds = $object[$dsid]) { return 0; }
+
+  // Fetch the parent $xpath from the $ds.
+  $xml = new DOMDocument;
+  $xml->loadXML($ds->content);
+  $mx = new DOMXPath($xml);
+  if ($dsid === "MODS") { $mx->registerNamespace($mods_ns, $mods_nsU); }
+  $count = 0;
+
+  // Find the parent.  If none...done.
+  $parents = $mx->query($xpath);
+  foreach ($parents as $parent) {
+    // Check for an existing child element with tag name $title.
+    $children = $parent->getElementsByTagName($title);
+    if ($children->length > 0 && $replace && !$dryRun) {  // If found and $replace, set the first matching child value to $contents.
+      $children->item(0)->nodeValue = $contents;
+      $count++;
+      break;
+    }
+
+    // Create a new $element with $value and append it.
+    if (!$element = $xml->createElement($title, $contents)) { return 0; }
+    $parent->appendChild($element);
+    $count++;
+    break;     // one and done...don't add more than one element even if there are multiple parents.
+  }
+
+  if (!$dryRun) {
+    // Save the changes.
+    $content = $xml->saveXML();
+    $object[$dsid]->setContentFromString($content);
+  }
+
+  return $count;
 }
 
 /**
