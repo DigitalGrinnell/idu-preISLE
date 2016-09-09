@@ -149,6 +149,22 @@ function idu_drush_command( ) {
         Corrects errant image/jpg and image/tif MIME types,
           changing them to image/jpeg and image/tiff.
 
+      PermissionsRelax -
+        Applies a 'relaxed' POLICY to an object to make it visible
+          to all.  The original POLICY is copied to a new Old_POLICY 
+          datastream.  If --find is specified the change will be made 
+          ONLY if the specified string exists in the DC datastream, and
+          if both --find and --dsid exist then only the specified DSID 
+          will be searched.  
+     
+        Option defaults are:
+          dsid=NULL
+          find=NULL
+
+      PermissionsRestore -
+        Restores an 'Old_POLICY' datastream as POLICY in order to bring
+        back an object's original permissions/policy. 
+
       Purge -
         Deletes the object.  Be careful with this one!
 
@@ -165,10 +181,6 @@ function idu_drush_command( ) {
       PurgeInactive -
         Deletes the specified objects if they are in an Inactive or Deleted
           state.
-
-      Relax -
-        Applies a 'relaxed' POLICY to an object to make it visible
-          to all.
 
       RemoveDatastreams -
         Removes the named --dsid datastream(s) from an existing object. Note
@@ -2024,6 +2036,91 @@ function idu_drush_fix_MIMEFix($pid) {
 }
 
 /**
+ * Drush idu_fix_* function to relax POLICY on an existing object by moving the
+ * POLICY datastream out of the way.
+ *
+ * Invoke this function during iduC process using an option of the form:
+ *   drush iduF <pid> PermissionsRelax --find=<text string>
+ *
+ * If a --find option is specified the change will be made ONLY if the specified
+ * string exists in the DC datastream, and if both --find and --dsid exist then
+ * only the specified DSID will be searched.
+ *
+ * @param int $r
+ *   The PID number to operate on.
+ * @param array $options
+ *   An array of options.  In this case $options['find'] and $options['dsid'] may exist
+ * @return int
+ *   The number of relax operations performed, or zero if none.
+ */
+function idu_drush_fix_PermissionsRelax($pid, $options=NULL) {
+
+  // For any exception, report and skip this PID
+  if (!$object = _idu_Repository()->getObject($pid)) {
+    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    return 0;
+  }
+
+  if (isset($options)) {
+    $find = (isset($options['find']) ? $options['find'] : NULL);
+    $dsid = (isset($options['dsid']) ? $options['dsid'] : NULL);
+  }
+
+  if (isset($find)) {
+    if (isset($dsid)) {
+      $ds = $object[$dsid];
+    } else {
+      $ds = $object['DC'];
+    }
+    $content = $ds->content;
+    if (!strpos($content, $find)) { return 0; }
+  }
+
+  if (isset($object['POLICY'])) {
+    $newDS = idu_copy_datastream($object, 'POLICY', 'text/xml', 'X', 'Old_POLICY');
+    $object->ingestDatastream($newDS);
+    unset($object['POLICY']);
+  } else {
+    return 0;
+  }
+
+  return 1;
+}
+
+/**
+ * Drush idu_fix_* function to restore POLICY on an existing object by moving the
+ * POLICY datastream out of the way and replacing it with Old_POLICY.
+ *
+ * Invoke this function during iduC process using an option of the form:
+ *   drush iduF <pid> PermissionsRestore
+ *
+ * @param int $r
+ *   The PID number to operate on.
+ * @param array $options
+ *   An array of options.
+ * @return int
+ *   The number of restore operations performed, or zero if none.
+ */
+function idu_drush_fix_PermissionsRestore($pid, $options=NULL) {
+
+  // For any exception, report and skip this PID
+  if (!$object = _idu_Repository()->getObject($pid)) {
+    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    return 0;
+  }
+
+  if (isset($object['Old_POLICY'])) {
+    $newDS = idu_copy_datastream($object, 'Old_POLICY', 'text/xml', 'X', 'POLICY');
+    $object->ingestDatastream($newDS);
+    unset($object['Old_POLICY']);
+  } else {
+    return 0;
+  }
+
+  return 1;
+}
+
+/**
  * Drush idu_fix_* function to purge an object (be careful!) from the repository.
  *
  * Invoke this function with an iduF process using a command of the form:
@@ -2268,55 +2365,6 @@ function idu_drush_fix_PurgeInactive($pid, $options=NULL) {
   return 0;
 }
 
-/**
- * Drush idu_fix_* function to relax POLICY on an existing object by moving the POLICY datastream out of the way.
- *
- * Invoke this function during iduC process using an option of the form:
- *   drush iduF <pid> Relax --find=<text string>
- *
- * If a --find option is specified the change will be made ONLY if the specified string exists
- * in the DC datastream, and if both --find and --dsid exist then only the specified DSID will be searched.
- *
- * @param int $r
- *   The PID number to operate on.
- * @param array $options
- *   An array of options.  In this case $options['find'] and $options['dsid'] may exist
- * @return int
- *   The number of repair operations performed, or zero if none.
- */
-function idu_drush_fix_Relax($pid, $options=NULL) {
-
-  // For any exception, report and skip this PID
-  if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
-    return 0;
-  }
-
-  if (isset($options)) {
-    $find = (isset($options['find']) ? $options['find'] : NULL);
-    $dsid = (isset($options['dsid']) ? $options['dsid'] : NULL);
-  }
-
-  if (isset($find)) {
-    if (isset($dsid)) {
-      $ds = $object[$dsid];
-    } else {
-      $ds = $object['DC'];
-    }
-    $content = $ds->content;
-    if (!strpos($content, $find)) { return 0; }
-  }
-
-  if (isset($object['POLICY'])) {
-    $newDS = idu_copy_datastream($object, 'POLICY', 'text/xml', 'X', 'Old_POLICY');
-    $object->ingestDatastream($newDS);
-    unset($object['POLICY']);
-  } else {
-    return 0;
-  }
-
-  return 1;
-}
 
 /**
  * Drush idu_fix_* function to remove specified datastream(s) from an object.
