@@ -284,41 +284,6 @@ function idu_handle_create_or_modify($object, $op='CREATE', $force=FALSE) {
   if (!$file = fopen($fileName, 'a+')) die("Could not open batch file $fileName!  ");
   if (!$log = fopen($logFile, 'a+')) die("Could not open log file $logFile!  ");
 
-  // Open the MODS datastream, if none... done.
-  if (!$mods = $object['MODS']) {
-    fprintf($log, "Warning: Object '$pid' has NO MODS record.\n");
-    fclose($file);
-    fclose($log);
-    return 0;
-  }
-
-  // Make the MODS content searchable as a SimpleXMLElement object.
-  $content = $mods->content;
-  $xml = new SimpleXMLElement($content);
-  $xpath = "/mods:mods/mods:identifier[@type='hdl']";
-
-  // Does this object already have a handle?
-  if ($nodes = $xml->xpath($xpath)) {    // Yes...
-    $oldHandle = (string)$nodes[0];
-    if ($op === 'CREATE' && !$force) {
-      fclose($file);
-      fclose($log);
-      return 0;
-    }
-  } else if ($op === 'MODIFY') {        // No existing handle...if Modify we need to adjust or give up.
-    if ($force) {
-      $op = 'CREATE';
-    } else {
-      fprintf($log, "Warning: Object '$pid' has no assigned Handle.  Use --force or 'drush iduH $pid Create' if you wish to create one.\n\n");
-      fclose($file);
-      fclose($log);
-      return 0;
-    }
-  }
-
-  // Appropriate handle status found.  Create or modify one as needed.
-  list($ns, $pidn) = explode(':', $pid);
-
   // If this is a new batch command file, print an AUTHENTICATE command block.
   if (!$old) {
     $cmd  = "AUTHENTICATE PUBKEY:300:0.NA/".H_PREFIX." \n".H_SVRDIR."/admpriv.bin";
@@ -331,6 +296,51 @@ function idu_handle_create_or_modify($object, $op='CREATE', $force=FALSE) {
     fprintf($file, "%s%s\n\n", $cmd, $key);
     fprintf($log, "%s%s\n\n", $cmd, $keyLog);
   }
+
+  // Open the MODS datastream, if none... done.
+  if (!$mods = $object['MODS']) {
+    fprintf($log, "Warning: Object '$pid' has NO MODS record.\n");
+    fclose($file);
+    fclose($log);
+    return 0;
+  }
+
+  // Search MODS using xpath query.
+  $m = new DOMDocument( );
+  $content = $mods->content;
+  $m->loadXML($content);
+  $mx = new DOMXpath($m);
+  $mx->registerNamespace($mods_ns, $mods_nsU);
+
+  /*
+  $content = $mods->content;
+  $xml = new SimpleXMLElement($content); */
+
+  $xpath = "/mods:mods/mods:identifier[@type='hdl']";
+
+  // Does this object already have a handle?
+  // if ($nodes = $xml->xpath($xpath)) {    // Yes...
+  $nodes = $mx->query($xpath);
+  if ($nodes->length > 0) {    // Yes...
+    // $oldHandle = (string)$nodes[0];
+    if ($op === 'CREATE' && !$force) {
+      fclose($file);
+      fclose($log);
+      return 0;
+    }
+  } else if ($op === 'MODIFY') {  // No existing handle...if Modify we need to adjust or give up.
+    if ($force) {
+      $op = 'CREATE';
+    } else {
+      fprintf($log, "Warning: Object '$pid' has no assigned Handle.  Use --force or 'drush iduH $pid Create' if you wish to create one.\n\n");
+      fclose($file);
+      fclose($log);
+      return 0;
+    }
+  }
+
+  // Appropriate handle status found.  Create or modify one as needed.
+  list($ns, $pidn) = explode(':', $pid);
 
   // Set the batch file permissions so that it can be deleted later.
   $path = drupal_realpath($fileName);
@@ -370,9 +380,12 @@ function idu_handle_create_or_modify($object, $op='CREATE', $force=FALSE) {
   // Remove all URI and DOI identifier elements found at the first level.
   $types = array("doi", "uri");
   foreach ($types as $type) {
-    foreach ($xpath->query("/mods:mods/mods:identifier[@type='$type']") as $node) {
-      $parent = $node->parentNode;
-      $parent->removeChild($node);    // remove the old element
+    $nodes = $mx->query("/mods:mods/mods:identifier[@type='$type']");
+    if ($nodes->length > 0) {
+      foreach ($nodes as $node) {
+        $parent = $node->parentNode;
+        $parent->removeChild($node);    // remove the old element
+      }
     }
   }
 
