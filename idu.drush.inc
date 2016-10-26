@@ -426,6 +426,18 @@ function idu_drush_print_progress($label, $current=NULL, $range=NULL) {
 }
 
 /**
+ * Wrapper for drush_log( ).
+ * 
+ * @param $msg
+ * @param $status
+ */
+function idu_drush_log($msg, $status) {
+  $dryRun = drush_get_option('dryRun', FALSE);
+  if ($dryRun) { print "$status: $msg\n"; }
+  drush_log( $msg, $status );
+}
+
+/**
  * Repository handling functions follow here.
  */
 
@@ -460,7 +472,7 @@ function drush_idu_iduDrupal($op) {
 
   $count = call_user_func($function);
   $finish = date('H:i:s');
-  drush_log("Completed $count 'iduDrupal - $op' operations at $finish. \n", 'status');
+  idu_drush_log("Completed $count 'iduDrupal - $op' operations at $finish. \n", 'status');
 
 }
 
@@ -507,7 +519,7 @@ function drush_idu_iduFix($first, $fix) {
     if (!$findReplace = parse_ini_file($file)) { die("Unable to parse findReplace INI file '$file' for reading!  "); } */
 
     $msg = count($findReplace)." substitution pair(s) found in '$file'.";
-    drush_log($msg, 'status');
+    idu_drush_log($msg, 'status');
 
   } else {
     $find = drush_get_option('find', NULL);
@@ -555,7 +567,7 @@ function drush_idu_iduFix($first, $fix) {
 
   // Done.
   $finish = date('H:i:s');
-  drush_log("Completed $count 'iduFix - $fix' operations at $finish. \n", 'status');
+  idu_drush_log("Completed $count 'iduFix - $fix' operations at $finish. \n", 'status');
 
   // If this is the List command, close the .csv file in /tmp.
   if ($list) { fclose($list); }
@@ -603,7 +615,7 @@ function drush_idu_iduFix($first, $fix) {
 
     // Done.
     $finish = date('H:i:s');
-    drush_log("Completed $count 'iduHandle - $handle_op' operations at $finish. \n", 'status');
+    idu_drush_log("Completed $count 'iduHandle - $handle_op' operations at $finish. \n", 'status');
 
     // If one or more handles were created there should be a batch file to process.  Do that now.
     if ($count > 0) {
@@ -625,9 +637,9 @@ function drush_idu_iduFix($first, $fix) {
         $newLog = 'temporary://'.H_LOG.time( );
         file_put_contents($newLog, file_get_contents($log));
         file_put_contents($newLog, file_get_contents("$log.tmp"), FILE_APPEND);
-        drush_log("Batch call to the Handle System is complete. A copy of the composite log file is stored in '$newLog'.", 'status');
+        idu_drush_log("Batch call to the Handle System is complete. A copy of the composite log file is stored in '$newLog'.", 'status');
       } else {
-        drush_log("Batch call to the Handle System is complete but no log file was generated?", 'error');
+        idu_drush_log("Batch call to the Handle System is complete but no log file was generated?", 'error');
       }
     }
 
@@ -638,7 +650,7 @@ function drush_idu_iduFix($first, $fix) {
 
     // Done.
     $finish = date('H:i:s');
-    drush_log("Completed $count 'iduHandle - $handle_op' operations at $finish. \n", 'status');
+    idu_drush_log("Completed $count 'iduHandle - $handle_op' operations at $finish. \n", 'status');
   }
 
 
@@ -660,18 +672,18 @@ function drush_idu_iduSpecial($pid, $operation) {
 
   // Report some info.
   $start = date('H:i:s');
-  drush_log("Starting iduSpecial '$operation' for PID $pid at $start.", 'status');
+  idu_drush_log("Starting iduSpecial '$operation' for PID $pid at $start.", 'status');
 
   $count = call_user_func($function, $pid);
 
   // Done.
   $finish = date('H:i:s');
   if ($count == 1) {
-    drush_log("Successfully completed ONE $operation operation at $finish.", 'status');
+    idu_drush_log("Successfully completed ONE $operation operation at $finish.", 'status');
   } else if ($count <> 1) {
-    drush_log("Successfully completed $count operations at $finish.", 'status');
+    idu_drush_log("Successfully completed $count operations at $finish.", 'status');
   } else {
-    drush_log("The Special $operation was unsuccessful and returned NO valid results at $finish.", 'error');
+    idu_drush_log("The Special $operation was unsuccessful and returned NO valid results at $finish.", 'error');
   }
 
 }
@@ -692,7 +704,7 @@ function drush_idu_iduTest( ) {
 
   // Done.
   $finish = date('H:i:s');
-  drush_log("Completed iduTest at $finish.", 'status');
+  idu_drush_log("Completed iduTest at $finish.", 'status');
 
 }
 
@@ -737,7 +749,7 @@ function idu_drush_fix_AddDatastream($pid) {
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
     return 0;
   }
 
@@ -773,7 +785,7 @@ function idu_drush_fix_AddXML($pid) {
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
     return 0;
   }
 
@@ -839,7 +851,7 @@ function idu_drush_fix_ChangeCompound($pid) {
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__ . " ($pid) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__ . " ($pid) returned NO object!", 'error');
     return 0;
   }
 
@@ -858,7 +870,7 @@ function idu_drush_fix_ChangeCompound($pid) {
   if ($isCompound) {
     $ignoreOBJ = drush_get_option('ignoreOBJ', FALSE);
     if (!$ignoreOBJ && !isset($object['OBJ'])) {
-      drush_log(__FUNCTION__ . ": Object $pid is a legitimate compound with no OBJ.", 'status');
+      idu_drush_log(__FUNCTION__ . ": Object $pid is a legitimate compound with no OBJ.", 'status');
       return 0;
     }
   } else {     // Not a compound.  Just return 0 without any message.
@@ -908,7 +920,7 @@ function idu_drush_fix_ChangeText($pid, $options) {
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
     return 0;
   }
 
@@ -980,7 +992,7 @@ function idu_drush_fix_Clean($pid, $options=NULL) {
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
     return 0;
   }
 
@@ -1033,7 +1045,7 @@ function idu_drush_fix_ChildSync($pid, $options) {
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__." ($pid) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__." ($pid) returned NO object!", 'error');
     return 0;
   }
 
@@ -1045,7 +1057,7 @@ function idu_drush_fix_ChildSync($pid, $options) {
     $ppid = $rels[0]['object']['value'];
     if ($ppid) {
       if (!$parent = _idu_Repository()->getObject($ppid)) {
-        drush_log(__FUNCTION__ . "($ppid) returned NO object!", 'error');
+        idu_drush_log(__FUNCTION__ . "($ppid) returned NO object!", 'error');
         return 0;
       }
 
@@ -1086,7 +1098,7 @@ function idu_drush_fix_CModelToMODS($pid) {
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__." ($pid) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__." ($pid) returned NO object!", 'error');
     return 0;
   }
 
@@ -1160,7 +1172,7 @@ function idu_drush_fix_CorrectCollections($pid, $options) {
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__." ($pid) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__." ($pid) returned NO object!", 'error');
     return 0;
   }
 
@@ -1229,7 +1241,7 @@ function idu_drush_fix_CompoundTN($pid, $preOpts=NULL) {
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
     return 0;
   }
 
@@ -1253,7 +1265,7 @@ function idu_drush_fix_CompoundTN($pid, $preOpts=NULL) {
       }
     }
     else {
-      drush_log("Cannot open the options file '$convert'!", 'error');
+      idu_drush_log("Cannot open the options file '$convert'!", 'error');
       return 0;
     }
     fclose($handle);
@@ -1278,12 +1290,12 @@ function idu_drush_fix_CompoundTN($pid, $preOpts=NULL) {
   $command .= "-geometry +4+4 -frame 5 -tile ${i}x1 -background none $cTName ";
 
   // OK, the montage command is built...run it.
-  drush_log("CompoundTN command is: '$command' for object $pid.", 'status');
+  idu_drush_log("CompoundTN command is: '$command' for object $pid.", 'status');
   $output = array();
   exec($command, $output, $return_status);
 
   if ($return_status != 0) {
-    drush_log("CompoundTN exec operation returned an error with status of '$return_status'.", 'error');
+    idu_drush_log("CompoundTN exec operation returned an error with status of '$return_status'.", 'error');
     return 0;
   }
 
@@ -1294,9 +1306,9 @@ function idu_drush_fix_CompoundTN($pid, $preOpts=NULL) {
       $command = "montage $options $temp $module_path" . "/3dots.png ";
       $command .= "-geometry +4+4 -tile 2x1 -background none $cTName ";
       exec($command, $output, $return_status);
-      drush_log("An ellipsis (...) was added to the CompoundTN image for object $pid.", 'status');
+      idu_drush_log("An ellipsis (...) was added to the CompoundTN image for object $pid.", 'status');
     } else {
-      drush_log("Error...Image $cTName could not be renamed to $temp.");
+      idu_drush_log("Error...Image $cTName could not be renamed to $temp.");
       return 0;
     }
   }
@@ -1308,7 +1320,7 @@ function idu_drush_fix_CompoundTN($pid, $preOpts=NULL) {
     $datastream->mimeType = 'image/png';
     $datastream->setContentFromFile($cTName);
     $object->ingestDatastream($datastream);
-    drush_log("CompoundTN call is complete and the PNG result has been added to object $pid as TN.", 'status');
+    idu_drush_log("CompoundTN call is complete and the PNG result has been added to object $pid as TN.", 'status');
 
     if (file_exists($cTName)) { unlink($cTName); }  // Clean up any old temporary files in the working directory.
 
@@ -1320,12 +1332,12 @@ function idu_drush_fix_CompoundTN($pid, $preOpts=NULL) {
       $urlTN = $remopoURL . "/objects/" . $children[0] . "/datastreams/TN/content ";
       $datastream->setContentFromURL($urlTN);
       $object->ingestDatastream($datastream);
-      drush_log("CompoundTN added TN from $children[0] to object $pid.", 'status');
+      idu_drush_log("CompoundTN added TN from $children[0] to object $pid.", 'status');
     } */
 
     return 1;
   } else {
-    drush_log("CompoundTN call did NOT yield a new PNG image!", 'error');
+    idu_drush_log("CompoundTN call did NOT yield a new PNG image!", 'error');
     return 0;
   }
 
@@ -1346,7 +1358,7 @@ function idu_drush_fix_ConvertTIFtoJP2($pid, $preOpts=NULL) {
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
     return 0;
   }
 
@@ -1354,14 +1366,14 @@ function idu_drush_fix_ConvertTIFtoJP2($pid, $preOpts=NULL) {
   $convert = drush_get_option('convert', NULL);
   $compress = drush_get_option('compress', NULL);
   if (is_null($convert) && is_null($compress)) {
-    drush_log("Either the --convert or --compress option MUST be specified!", 'error');
+    idu_drush_log("Either the --convert or --compress option MUST be specified!", 'error');
     return 0;
   } else if ($convert && is_null($compress)) {
     $file = $convert;
   } else if ($compress && is_null($convert)) {
     $file = $compress;
   } else {
-    drush_log("You cannot specify BOTH --convert and --compress in the same command!", 'error');
+    idu_drush_log("You cannot specify BOTH --convert and --compress in the same command!", 'error');
     return 0;
   }
 
@@ -1371,7 +1383,7 @@ function idu_drush_fix_ConvertTIFtoJP2($pid, $preOpts=NULL) {
   if ($handle) {
     while (($line = fgets($handle)) !== false) { $options .= trim($line).' '; }
   } else {
-    drush_log("Cannot open the options file '$file'!", 'error');
+    idu_drush_log("Cannot open the options file '$file'!", 'error');
     return 0;
   }
   fclose($handle);
@@ -1415,7 +1427,7 @@ function idu_drush_fix_ConvertTIFtoJP2($pid, $preOpts=NULL) {
     if (file_exists($jp2Name)) { unlink($jp2Name); } */
     return 1;
   } else {
-    drush_log("ConvertTIFtoJP2 call did NOT yield a new JP2 image!", 'error');
+    idu_drush_log("ConvertTIFtoJP2 call did NOT yield a new JP2 image!", 'error');
     return 0;
   }
 }
@@ -1440,7 +1452,7 @@ function idu_drush_fix_DateCreatedFix($pid) {
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
     return 0;
   }
 
@@ -1512,7 +1524,7 @@ function idu_drush_fix_DCTransform($pid) {
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
     return 0;
   }
 
@@ -1570,7 +1582,7 @@ function idu_drush_fix_Derivatives($pid) {
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
     return 0;
   }
 
@@ -1750,7 +1762,7 @@ function idu_drush_fix_isConstituentOf($pid, $options) {
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
     return 0;
   }
 
@@ -1786,11 +1798,11 @@ function idu_drush_fix_List($pid) {
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__ . " ($pid) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__ . " ($pid) returned NO object!", 'error');
     return 0;
   }
 
-  drush_log(__FUNCTION__ . " Object $pid found.", 'status');
+  idu_drush_log(__FUNCTION__ . " Object $pid found.", 'status');
   fputcsv($list,array($pid));
 
   return 1;
@@ -1814,7 +1826,7 @@ function idu_drush_fix_MakeFamily($pid) {
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__ . " ($pid) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__ . " ($pid) returned NO object!", 'error');
     return 0;
   }
 
@@ -1831,7 +1843,7 @@ function idu_drush_fix_MakeFamily($pid) {
 
   // The target object is already a compound parent...issue a warning and return.
   if ($isCompound) {
-    drush_log(__FUNCTION__ . " Object $pid is already a compound (parent) object.", 'warning');
+    idu_drush_log(__FUNCTION__ . " Object $pid is already a compound (parent) object.", 'warning');
     return 0;
   }
 
@@ -1901,20 +1913,20 @@ function idu_drush_fix_MakeSibling($pid) {
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
     return 0;
   }
 
   // Fetch the existing sibling object...
 
   if (!$siblingPID = drush_get_option('sibling', NULL)) {
-    drush_log('No existing sibling PID specified!', 'error');
+    idu_drush_log('No existing sibling PID specified!', 'error');
     return 0;
   }
 
   // For any exception, report and skip this PID
   if (!$sibling = islandora_object_load($siblingPID)) {
-    drush_log(__FUNCTION__."($siblingPID) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__."($siblingPID) returned NO object!", 'error');
     return 0;
   }
 
@@ -2016,7 +2028,7 @@ function idu_drush_fix_MIMEFix($pid) {
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
     return 0;
   }
 
@@ -2058,7 +2070,7 @@ function idu_drush_fix_PermissionsRelax($pid, $options=NULL) {
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
     return 0;
   }
 
@@ -2106,7 +2118,7 @@ function idu_drush_fix_PermissionsRestore($pid, $options=NULL) {
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
     return 0;
   }
 
@@ -2145,7 +2157,7 @@ function idu_drush_fix_Purge($pid, $options=NULL) {
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
     return 0;
   }
 
@@ -2190,7 +2202,7 @@ function idu_drush_fix_PurgeDatastream($pid) {
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
     return 0;
   }
 
@@ -2237,7 +2249,7 @@ function idu_drush_fix_PurgeElements($pid) {
   // Fetch the intended object...
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
     return 0;
   }
 
@@ -2298,7 +2310,7 @@ function idu_drush_fix_PurgeFamily($pid, $options=NULL) {
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
     return 0;
   }
 
@@ -2350,7 +2362,7 @@ function idu_drush_fix_PurgeInactive($pid, $options=NULL) {
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
     return 0;
   }
 
@@ -2386,7 +2398,7 @@ function idu_drush_fix_RemoveDatastreams($pid) {
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
     return 0;
   }
 
@@ -2431,7 +2443,7 @@ function idu_drush_fix_RemoveDuplicateElements($pid) {
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
     return 0;
   }
 
@@ -2511,7 +2523,7 @@ function idu_drush_fix_RenameDatastream($pid) {
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
     return 0;
   }
 
@@ -2520,7 +2532,7 @@ function idu_drush_fix_RenameDatastream($pid) {
   if (!$ds = $object[$dsid]) { return 0; }
 
   if (!$replace = drush_get_option('replace', NULL)) {
-    drush_log("A --replace datastream name MUST be specified in the command.", 'error');
+    idu_drush_log("A --replace datastream name MUST be specified in the command.", 'error');
     return 0;
   };
 
@@ -2569,7 +2581,7 @@ function idu_drush_fix_ReportChildDuplicates($pid) {
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
     return 0;
   }
 
@@ -2592,7 +2604,7 @@ function idu_drush_fix_ReportChildDuplicates($pid) {
 
   // Open the parent object to examine its MODS.
   if (!$parent = _idu_Repository()->getObject($ppid)) {
-    drush_log(__FUNCTION__."($ppid) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__."($ppid) returned NO object!", 'error');
     return 0;
   }
 
@@ -2671,7 +2683,7 @@ function idu_drush_fix_SelfTransform($pid) {
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
     return 0;
   }
 
@@ -2745,7 +2757,7 @@ function idu_drush_fix_Thumbnail($pid, $options=NULL) {
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
     return 0;
   }
 
@@ -2785,7 +2797,7 @@ function idu_drush_fix_TitleBookPage($pid, $options) {
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
     return 0;
   }
 
@@ -2803,7 +2815,7 @@ function idu_drush_fix_TitleBookPage($pid, $options) {
 
   // For any exception, report and skip this PID
   if (!$pObject = islandora_object_load($parent)) {
-    drush_log(__FUNCTION__."($parent) returned NO parent object!", 'error');
+    idu_drush_log(__FUNCTION__."($parent) returned NO parent object!", 'error');
     return 0;
   }
 
@@ -2844,7 +2856,7 @@ function idu_drush_fix_toIR($pid, $options) {
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
     return 0;
   }
 
@@ -2874,7 +2886,7 @@ function idu_drush_fix_toPHPP($pid, $options) {
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
     return 0;
   }
 
@@ -2918,9 +2930,11 @@ function idu_drush_fix_UpdateDC($pid) {
 
   define('COLLECTION_MODS', "<mods xmlns='http://www.loc.gov/mods/v3' xmlns:mods='http://www.loc.gov/mods/v3' xmlns:xlink='http://www.w3.org/1999/xlink' xmlns:xsi='http://www.w3.org/2001/XMLSchema-instance'><titleInfo><title>xxx</title></titleInfo><extension><primarySort>99</primarySort></extension></mods>");
 
+  $dryRun = drush_get_option('dryRun', FALSE);
+
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__." PID $pid returned NO object!", 'error');
     return 0;
   }
 
@@ -2939,7 +2953,7 @@ function idu_drush_fix_UpdateDC($pid) {
       // Find the /name parent of our target element.
       $parents = $mx->query("/mods:mods/mods:name");
       foreach ($parents as $parent) {
-        // Now look for /name/namePart[not(@*))]... if not there see if we have a valid @type='family' and @type='given' to derive one from;
+        // Now look for /name/namePart[not(@*))]... if not found check @type='family' and @type='given' to derive one from;
         $target = $mx->query("/mods:mods/mods:name/mods:namePart[not(@*)]");
         if ($target->length === 0) {
           $family = $mx->query("/mods:mods/mods:name/mods:namePart[@type='family']");
@@ -2960,9 +2974,12 @@ function idu_drush_fix_UpdateDC($pid) {
             $parent->appendChild($new);
             $content = $xml->saveXML();
             $total += 1;
-            $object['MODS']->setContentFromString($content);
+            if (!$dryRun) {
+              $object['MODS']->setContentFromString($content);
+            } else {
+              idu_drush_log(__FUNCTION__." $pid modified namePart to '$name'.", 'info');
+            }
           }
-//          break;
         }
 
         // Now look for /name/role/roleTerm[not(@*))]... and if not there add a type="text" attribute.
@@ -2973,9 +2990,12 @@ function idu_drush_fix_UpdateDC($pid) {
           $target->appendChild($type);
           $content = $xml->saveXML();
           $total += 1;
-          $object['MODS']->setContentFromString($content);
+          if (!$dryRun) {
+            $object['MODS']->setContentFromString($content);
+          } else {
+            idu_drush_log(__FUNCTION__." $pid modified roleTerm @type='text'.", 'info');
+          }
         }
-       // break;
       }
     }
   }
@@ -3003,9 +3023,15 @@ function idu_drush_fix_UpdateDC($pid) {
       $ds = $object->constructDatastream('MODS', 'X');
       $ds->label = 'MODS Record';
       $ds->mimeType = 'text/xml';
-      $ds->setContentFromString($content);
-      $object->ingestDatastream($ds);
-      // $object->repository->ingestObject($object);
+
+      if (!$dryRun) {
+        $ds->setContentFromString($content);
+        $object->ingestDatastream($ds);
+        // $object->repository->ingestObject($object);
+      } else {
+        idu_drush_log(__FUNCTION__." $pid has a new MODS datastream.", 'info');
+      }
+
       $mods = $object['MODS'];
       $total += 1;
     }
@@ -3030,10 +3056,14 @@ function idu_drush_fix_UpdateDC($pid) {
       try {
         $object['MODS']->setContentFromString($content);
       } catch (Exception $e) {
-        drush_log("Exception in object '$pid'. $e ",'error');
+        idu_drush_log("Exception in object '$pid'. $e ",'error');
         return 0;
       }
-      $object['MODS']->setContentFromString($content);
+      if (!$dryRun) {
+        $object['MODS']->setContentFromString($content);
+      } else {
+        idu_drush_log(__FUNCTION__." $pid has a new mods:extension element.", 'info');
+      }
       break;
     }
   }
@@ -3054,7 +3084,11 @@ function idu_drush_fix_UpdateDC($pid) {
       $parent->appendChild($new);
       $content = $xml->saveXML();
       $total += 1;
-      $object['MODS']->setContentFromString($content);
+      if (!$dryRun) {
+        $object['MODS']->setContentFromString($content);
+      } else {
+        idu_drush_log(__FUNCTION__." $pid modified has a primarySort of '$val'.", 'info');
+      }
       break;
     }
   }
@@ -3084,22 +3118,32 @@ function idu_drush_fix_UpdateDC($pid) {
       $parent->appendChild($new);
       $content = $xml->saveXML();
       $total += 1;
-      $object['MODS']->setContentFromString($content);
+      if (!$dryRun) {
+        $object['MODS']->setContentFromString($content);
+      } else {
+        idu_drush_log(__FUNCTION__." $pid now has a mods:creators value of '$creators'.", 'info');
+      }
       break;
-
-      // We already have a /creators... make sure it is up-to-date
-    } else {
+    } else {        // We already have a /creators... make sure it is up-to-date
       foreach ($target as $t) {
         if ($t->nodeValue === "0" || $t->nodeValue === "") {
           $t->nodeValue = "Unknown";
           $content = $xml->saveXML();
           $total += 1;
-          $object['MODS']->setContentFromString($content);
+          if (!$dryRun) {
+            $object['MODS']->setContentFromString($content);
+          } else {
+            idu_drush_log(__FUNCTION__." $pid modified mods:creators value to 'Unknown'.", 'info');
+          }
         } else if ($t->nodeValue != $creators) {
           $t->nodeValue = $creators;
           $content = $xml->saveXML();
           $total += 1;
-          $object['MODS']->setContentFromString($content);
+          if (!$dryRun) {
+            $object['MODS']->setContentFromString($content);
+          } else {
+            idu_drush_log(__FUNCTION__." $pid modified mods:creators value is '$creators'.", 'info');
+          }
         }
       }
     }
@@ -3142,14 +3186,22 @@ function idu_drush_fix_UpdateDC($pid) {
       $parent->appendChild($new);
       $content = $xml->saveXML();
       $total += 1;
-      $object['DC']->setContentFromString($content);
+      if (!$dryRun) {
+        $object['DC']->setContentFromString($content);
+      } else {
+        idu_drush_log(__FUNCTION__." $pid now has a new dc.date value of '$date'.", 'info');
+      }
     } else {  // We already have a dc:date... make sure it is up-to-date
       foreach ($target as $t) {
         if ($t->nodeValue != $date) {
           $t->nodeValue = $date;
           $content = $xml->saveXML();
           $total += 1;
-          $object['DC']->setContentFromString($content);
+          if (!$dryRun) {
+            $object['DC']->setContentFromString($content);
+          } else {
+            idu_drush_log(__FUNCTION__." $pid modified dc.date value of '$date'.", 'info');
+          }
         }
       }
     }
@@ -3163,14 +3215,22 @@ function idu_drush_fix_UpdateDC($pid) {
       $parent->appendChild($new);
       $content = $xml->saveXML();
       $total += 1;
-      $object['DC']->setContentFromString($content);
+      if (!$dryRun) {
+        $object['DC']->setContentFromString($content);
+      } else {
+        idu_drush_log(__FUNCTION__." $pid now has a new dc.creator value of '$creators'.", 'info');
+      }
     } else {  // We already have a dc:creators... make sure it is up-to-date
       foreach ($target as $t) {
         if ($t->nodeValue != $creators) {
           $t->nodeValue = $creators;
           $content = $xml->saveXML();
           $total += 1;
-          $object['DC']->setContentFromString($content);
+          if (!$dryRun) {
+            $object['DC']->setContentFromString($content);
+          } else {
+            idu_drush_log(__FUNCTION__." $pid modified dc.date value is '$date'.", 'info');
+          }
         }
       }
     }
@@ -3194,7 +3254,7 @@ function idu_drush_Handle_Create($pid) {
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
     return 0;
   }
 
@@ -3213,7 +3273,7 @@ function idu_drush_Handle_Modify($pid) {
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
     return 0;
   }
 
@@ -3253,7 +3313,7 @@ function idu_drush_special_FixLocal($pid) {
 
     // For any exception, report and skip this PID
     if (!$object = _idu_Repository()->getObject($pid)) {
-      drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+      idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
       continue;
     }
 
@@ -3328,7 +3388,7 @@ function idu_drush_special_FixObjectTitle($pid) {
 
     // For any exception, report and skip this PID
     if (!$object = _idu_Repository()->getObject($pid)) {
-      drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+      idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
       continue;
     }
 
@@ -3373,7 +3433,7 @@ function idu_drush_special_PrintRI($pid) {
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
     return 0;
   }
 
@@ -3392,13 +3452,13 @@ function idu_drush_special_PrintRI($pid) {
   // Print the page (constituent) information...
   if ($pages) {
     $count = count($pages);
-    drush_log("Object $pid has a CModel of '$cModel' and $count RI constituents.", 'info');
+    idu_drush_log("Object $pid has a CModel of '$cModel' and $count RI constituents.", 'info');
     foreach ($pages as $page => $info) {
-      drush_log("Constituent information for: $page", 'info');
-      drush_log(print_r($info, TRUE), 'info');
+      idu_drush_log("Constituent information for: $page", 'info');
+      idu_drush_log(print_r($info, TRUE), 'info');
     }
   } else {
-    drush_log("Object $pid has a CModel of '$cModel' and no RI constituents.", 'info');
+    idu_drush_log("Object $pid has a CModel of '$cModel' and no RI constituents.", 'info');
   }
 }
 
@@ -3605,10 +3665,10 @@ function idu_drush_import_from_CSV($ns, $data) {
 
   // First call... report the current purpose of this function.
   if ($count++ < 1) {
-    drush_log(__FUNCTION__.' has been called. ', 'status');
+    idu_drush_log(__FUNCTION__.' has been called. ', 'status');
     // $msg = "This function is currently DISABLED!  It was previously configured to import Reference Identifiers (formerly CatalogueResonaise) data into existing objects.";
     $msg = "This function is configured to pull accession numbers (local IDs) from CSV and drop them into existing /mods/identifier[@type=local] elements.";
-    drush_log($msg, 'status');
+    idu_drush_log($msg, 'status');
     // die( );
   }
 
@@ -3638,7 +3698,7 @@ function idu_drush_import_from_CSV($ns, $data) {
 
             // Ok, go to work here...
             if (!$object = _idu_Repository()->getObject($pid)) {
-              drush_log(__FUNCTION__ . "($pid) returned NO object!", 'error');
+              idu_drush_log(__FUNCTION__ . "($pid) returned NO object!", 'error');
               return 0;
             }
 
@@ -3665,7 +3725,7 @@ function idu_drush_import_from_CSV($ns, $data) {
               $parent->appendChild($element1);
               $content = $xml->saveXML();
               $object['MODS']->setContentFromString($content);
-              drush_log(" >>>>>> Set object $pid with localID $local to References = $cr.", 'status');
+              idu_drush_log(" >>>>>> Set object $pid with localID $local to References = $cr.", 'status');
               idu_drush_fix_DCTransform($pid);
               return 1;
             }
@@ -3692,7 +3752,7 @@ function idu_drush_import_from_CSV($ns, $data) {
         if ($result[0]['PID'] === $pid && $result[0]['mods_identifier_local_ms'][0] === $pid) {
           // Ok, go to work here...
           if (!$object = _idu_Repository()->getObject($pid)) {
-            drush_log(__FUNCTION__ . " ($pid) returned NO object!", 'error');
+            idu_drush_log(__FUNCTION__ . " ($pid) returned NO object!", 'error');
             return 0;
           }
 
