@@ -246,6 +246,7 @@ function idu_drush_command( ) {
       'source'    => t("Specifies the DC field from which /mods/extension/creators is to be constructed.  Default is 'dc:creator'.\n"),
       'substitutionsFile' => t("In place of 'find' and 'replace', this option specifies the path to a 'csv' style file from which 'find, replace' pairs will be read.\n"),
       'title'     => t("Specifies a datastream title (label) or XML element value when needed. Default varies by use.\n"),
+      'verbose'   => t("Triggers verbose output in certain commands.\n"),
       'xpath'     => t("Specifies a metadata XPath whenever one is needed. Note that it is wise to put your XPath in double quotes and use single quotes within where necessary.\n"),
       'xsl'       => t("Specifies the path to the MODS-to-DC transform XSL file to be applied. Defaults to public://mods_to_dc_grinnell.xsl.\n"),
     ),
@@ -2392,7 +2393,9 @@ function idu_drush_fix_RemoveDatastreams($pid) {
   // Fetch options.
   $dsid = drush_get_option('dsid', 'MODS_*');
   $dryRun = drush_get_option('dryRun', FALSE);
+  $verbose = drush_get_option('verbose', FALSE);
 
+  if ($verbose) { echo(__FUNCTION__." processing object '$pid'."); }
   $count = 0;
 
   foreach ($object as $key => $datastream) {
@@ -2400,6 +2403,12 @@ function idu_drush_fix_RemoveDatastreams($pid) {
       if (!$dryRun) { unset($object[$key]); }
       $count++;
     }
+  }
+
+  if ($verbose && $dryRun) {
+    echo("  $count datastreams found.\n");
+  } else if ($verbose && !$dryRun) {
+    echo("  $count datastreams removed.\n");
   }
 
   return $count;
@@ -2982,46 +2991,8 @@ function idu_drush_fix_UpdateDC($pid) {
     }
   }
 
-  // Open the DC datastream and have a look for dc:date and dc:creator.
-  if (!$dc = $object['DC']) { return 0; }
-
-  $xml = new DOMDocument;
-  $xml->loadXML($dc->content);
-  $dx = new DOMXPath($xml);
-
-  // Find the oai_dc:dc...the parent of our target elements.
-  $parents = $dx->query("/oai_dc:dc");
-
-  foreach ($parents as $parent) {         // There will be only ONE!
-
-    // Now look for dc:date... if not there append a new element to $parent.
-    $target = $dx->query("/oai_dc:dc/dc:date");
-
-    if ($target->length === 0) {
-      $val = drush_get_option('date', 'Unspecified');
-      $new = $xml->createElement("dc:date", $val);
-      $parent->appendChild($new);
-      $content = $xml->saveXML();
-      $total += 1;
-      $object['DC']->setContentFromString($content);
-    }
-
-    // Now look for dc:creator... if not there append a new element to $parent.
-    $target = $dx->query("/oai_dc:dc/dc:creator");
-
-    if ($target->length === 0) {
-      $val = drush_get_option('creator', 'Unknown');
-      $new = $xml->createElement("dc:creator", $val);
-      $parent->appendChild($new);
-      $content = $xml->saveXML();
-      $total += 1;
-      $object['DC']->setContentFromString($content);
-    }
-  }
-
-  // If there is no MODS, create a skeleton datastream IF this object has a
-  // collectionCModel.
-  if (!$mods = $object['MODS']) {
+  // If there is no MODS, create a skeleton datastream IF this object has a collectionCModel.
+    if (!$mods = $object['MODS']) {
     if (!$collection) {
       return;
     } else {
@@ -3067,48 +3038,6 @@ function idu_drush_fix_UpdateDC($pid) {
     }
   }
 
-  // If this is a $collection, skip over this step...
-  // Now look for /mods/extension/creators... if not found append a new element to $parent.
-  if (!$collection) {
-    $xml = new DOMDocument;
-    $xml->loadXML($object['MODS']->content);
-    $mx = new DOMXPath($xml);
-    $mx->registerNamespace($mods_ns, $mods_nsU);
-
-    $parents = $mx->query("/mods:mods/mods:extension");
-
-    foreach ($parents as $parent) {         // There should be only ONE!
-      $target = $mx->query("/mods:mods/mods:extension/mods:creators");
-      $val = idu_build_creators_element($object);
-
-      // No /creators...create one.
-      if ($target->length === 0) {
-        $new = $xml->createElement("creators", $val);
-        $parent->appendChild($new);
-        $content = $xml->saveXML();
-        $total += 1;
-        $object['MODS']->setContentFromString($content);
-        break;
-
-      // We already have a /creators... make sure it is up-to-date
-      } else {
-        foreach ($target as $t) {
-          if ($t->nodeValue === "0" || $t->nodeValue === "") {
-            $t->nodeValue = "Unknown";
-            $content = $xml->saveXML();
-            $total += 1;
-            $object['MODS']->setContentFromString($content);
-          } else if ($t->nodeValue != $val) {
-            $t->nodeValue = $val;
-            $content = $xml->saveXML();
-            $total += 1;
-            $object['MODS']->setContentFromString($content);
-          }
-        }
-      }
-    }
-  }
-
   // Now look for /mods/extension/primarySort... if not found append a new element to $parent.
   $xml = new DOMDocument;
   $xml->loadXML($object['MODS']->content);
@@ -3127,6 +3056,123 @@ function idu_drush_fix_UpdateDC($pid) {
       $total += 1;
       $object['MODS']->setContentFromString($content);
       break;
+    }
+  }
+
+  // If this is a $collection, skip over the remaining steps.
+  if ($collection) { return $total; }
+
+  // Set some defaults...
+  $creators = 'Unknown';   // the default dc:creator value
+  $date = 'Unspecified';   // the default dc:date value
+
+  // Now look for /mods/extension/creators... if not found append a new element to $parent.
+  $xml = new DOMDocument;
+  $xml->loadXML($object['MODS']->content);
+  $mx = new DOMXPath($xml);
+  $mx->registerNamespace($mods_ns, $mods_nsU);
+
+  $parents = $mx->query("/mods:mods/mods:extension");
+
+  foreach ($parents as $parent) {         // There should be only ONE!
+    $target = $mx->query("/mods:mods/mods:extension/mods:creators");
+    $creators = idu_build_creators_element($object);
+
+    // No /creators...create one.
+    if ($target->length === 0) {
+      $new = $xml->createElement("creators", $creators);
+      $parent->appendChild($new);
+      $content = $xml->saveXML();
+      $total += 1;
+      $object['MODS']->setContentFromString($content);
+      break;
+
+      // We already have a /creators... make sure it is up-to-date
+    } else {
+      foreach ($target as $t) {
+        if ($t->nodeValue === "0" || $t->nodeValue === "") {
+          $t->nodeValue = "Unknown";
+          $content = $xml->saveXML();
+          $total += 1;
+          $object['MODS']->setContentFromString($content);
+        } else if ($t->nodeValue != $creators) {
+          $t->nodeValue = $creators;
+          $content = $xml->saveXML();
+          $total += 1;
+          $object['MODS']->setContentFromString($content);
+        }
+      }
+    }
+  }
+
+  // Now look for /mods/originInfo/dateCreated to populate dc:date.
+  $xml = new DOMDocument;
+  $xml->loadXML($object['MODS']->content);
+  $mx = new DOMXPath($xml);
+  $mx->registerNamespace($mods_ns, $mods_nsU);
+
+  $parents = $mx->query("/mods:mods/mods:originInfo");
+
+  foreach ($parents as $parent) {         // There should be only ONE!
+    $target = $mx->query("/mods:mods/mods:originInfo/mods:dateCreated");
+    foreach ($target as $t) { $date = $t->nodeValue; }
+  }
+
+  // Now that MODS is squared away, lets take care of DC:date and DC:contributor.
+  // Open the DC datastream and have a look for them...
+
+  if (!$dc = $object['DC']) { return 0; }
+
+  $xml = new DOMDocument;
+  $xml->loadXML($dc->content);
+  $dx = new DOMXPath($xml);
+
+  // Find the oai_dc:dc...the parent of our target elements.
+  $parents = $dx->query("/oai_dc:dc");
+
+  foreach ($parents as $parent) {         // There will be only ONE!
+
+    // Now look for dc:date... if not there append a new element to $parent.
+    $target = $dx->query("/oai_dc:dc/dc:date");
+
+    // No dc:date...create one.
+    if ($target->length === 0) {
+      $val = drush_get_option('date', $date);
+      $new = $xml->createElement("dc:date", $val);
+      $parent->appendChild($new);
+      $content = $xml->saveXML();
+      $total += 1;
+      $object['DC']->setContentFromString($content);
+    } else {  // We already have a dc:date... make sure it is up-to-date
+      foreach ($target as $t) {
+        if ($t->nodeValue != $date) {
+          $t->nodeValue = $date;
+          $content = $xml->saveXML();
+          $total += 1;
+          $object['DC']->setContentFromString($content);
+        }
+      }
+    }
+
+    // Now look for dc:creator... if not there append a new element to $parent.
+    $target = $dx->query("/oai_dc:dc/dc:creator");
+
+    if ($target->length === 0) {
+      $val = drush_get_option('creator', $creators);
+      $new = $xml->createElement("dc:creator", $val);
+      $parent->appendChild($new);
+      $content = $xml->saveXML();
+      $total += 1;
+      $object['DC']->setContentFromString($content);
+    } else {  // We already have a dc:creators... make sure it is up-to-date
+      foreach ($target as $t) {
+        if ($t->nodeValue != $creators) {
+          $t->nodeValue = $creators;
+          $content = $xml->saveXML();
+          $total += 1;
+          $object['DC']->setContentFromString($content);
+        }
+      }
     }
   }
 
