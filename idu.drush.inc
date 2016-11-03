@@ -127,7 +127,8 @@ function idu_drush_command( ) {
         and passes the line to idu_drush_import( ) for processing.
 
       IndexSolr -
-        Attempts to update an object's Solr index.
+        Attempts to update an object's Solr index.  If the --force option is 
+        set this command will NOT use Solr to retrieve a list of objects.
 
       isConstituentOf -
         Changes a literal isConstituentOf value to a proper
@@ -233,6 +234,7 @@ function idu_drush_command( ) {
       'dsid'      => t("Specifies the datastream ID in which to make changes.\n"),
       'find'      => t("Specifies text to be found (and in some cases replaced).\n"),
       'fixName'   => t("If set, this option instructs UpdateDC to ensure that a MODS /name/namePart[not(@*)] element exists.\n"),
+      'force'     => t("If set, this option instructs IndexSolr NOT to use Solr to fetch a list of objects.\n"),
       'ignoreOBJ' => t("If TRUE, this option tells 'ChangeCompound' that no OBJ is required when changing a compoundCModel to another type.\n"),
       'image'     => t("Specifies the path to a jpeg image to be applied by the specified Fix operation.  Defaults to public://ImageNotAvailableTIFF_TN.jpg.\n"),
       'mime'      => t("Specifies the OBJ MIME type of objects to process.  Defaults to 'image/tiff'.\n"),
@@ -499,7 +501,24 @@ function drush_idu_iduFix($first, $fix) {
   $list = fopen($fname, "w");
   fputcsv($list, array("Function is $fix"));
 
-  if (!$pids = idu_drush_prep($first, $last, $pidn, $range, $ns, TRUE)) { return; }     // Get the PIDs and initialize the loop...
+  // If this is an IndexSolr call with the --force option, don't use Solr to retrieve the list of PIDs!
+  $force = drush_get_option('force',FALSE);
+  if ($fix == "IndexSolr" && $force) {
+    list($ns, $pidSpec) = explode(':', $first);
+    list($first, $last) = explode('-', $pidSpec);
+    if ($last) {
+      for ($range=0, $i=$first; $i<=$last; $i++) {
+        $pids[] = $i;
+        $range++;
+      }
+    } else {
+      $pids[0] = $first;
+      $range = 1;
+    }
+    $pidn = $first;
+  } else {
+    if (!$pids = idu_drush_prep($first, $last, $pidn, $range, $ns, TRUE)) { return; }  // Get the PIDs and initialize the loop..
+  }
 
   // Pre-process some options...
   // Check for a --substitutionsFile option, instead of $find and $replace, and process accordingly.
