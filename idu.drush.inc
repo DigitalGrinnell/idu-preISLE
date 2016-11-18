@@ -1850,6 +1850,7 @@ function idu_drush_fix_IndexSolr($pid) {
     return 1;
   } else {
     idu_drush_log(__FUNCTION__ . ": Number of Solr warnings was NOT zero for PID $pid!", 'warning');
+    if (drush_get_option('verbose', FALSE)) { echo $status; }
     return 0;
   }
 }
