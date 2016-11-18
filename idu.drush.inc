@@ -113,7 +113,8 @@ function idu_drush_command( ) {
 
       DateCreatedFix -
         Looks for invalid date strings in /mods/originInfo/dateCreated
-          fields and attempts to fix them if the --dryRun option is NOT set.
+          fields and attempts to fix them if the --dryRun option 
+          is NOT set.  Note that --force defaults to TRUE for this command.
 
       DCTransform -
         Applies the specified self-transform to an object's MODS then
@@ -121,6 +122,11 @@ function idu_drush_command( ) {
 
       Derivatives -
         Attempts to regenerate ALL derivatives for an existing object.
+        
+      Discover -
+        Attempts to identify objects that are NOT indexed in Solr.  The
+          --force and --repeat options are implied with a default --repeat
+          value of 1000.
         
       ImportCSV -
         Reads data, one line at at time, from the named --csv CSV data file
@@ -167,7 +173,9 @@ function idu_drush_command( ) {
         back an object's original permissions/policy. 
 
       Purge -
-        Deletes the object.  Be careful with this one!
+        Deletes the object.  If the --force option is set this command 
+        will NOT use Solr to retrieve a list of objects. 
+        Be careful with this one!
 
       PurgeDatastream -
         Deletes the --dsid datastream.  Be careful with this one too!
@@ -234,7 +242,7 @@ function idu_drush_command( ) {
       'dsid'      => t("Specifies the datastream ID in which to make changes.\n"),
       'find'      => t("Specifies text to be found (and in some cases replaced).\n"),
       'fixName'   => t("If set, this option instructs UpdateDC to ensure that a MODS /name/namePart[not(@*)] element exists.\n"),
-      'force'     => t("If set, this option instructs IndexSolr NOT to use Solr to fetch a list of objects.\n"),
+      'force'     => t("If set, this option instructs IndexSolr and other commands NOT to use Solr to fetch a list of objects.\n"),
       'ignoreOBJ' => t("If TRUE, this option tells 'ChangeCompound' that no OBJ is required when changing a compoundCModel to another type.\n"),
       'image'     => t("Specifies the path to a jpeg image to be applied by the specified Fix operation.  Defaults to public://ImageNotAvailableTIFF_TN.jpg.\n"),
       'mime'      => t("Specifies the OBJ MIME type of objects to process.  Defaults to 'image/tiff'.\n"),
@@ -496,24 +504,45 @@ function drush_idu_iduFix($first, $fix) {
   $function = 'idu_drush_fix_'.$fix;
   if (!function_exists($function)) { drush_log("The specified Fix function '$function' does not exist!", 'error'); }
 
-  // If this is the List command, save the objects to a .csv file in /tmp.
-  $fname = "/tmp/object_list.csv";
-  $list = fopen($fname, "w");
-  fputcsv($list, array("Function is $fix"));
+  $all_pids = array( );
 
-  // If this is an IndexSolr call with the --force option, don't use Solr to retrieve the list of PIDs!
-  $force = drush_get_option('force',FALSE);
-  if ($fix == "IndexSolr" && $force) {
+  // If this is the List or Discover command, save the objects to a .csv file in /tmp.
+  if ($fix == 'List' || $fix === 'Discover') {
+    $fname = "/tmp/object_list.csv";
+    $list = fopen($fname, "w");
+    fputcsv($list, array("Function is $fix"));
+  }
+
+  // If this is a Discover/DateCreatedFix, or IndexSolr/Purge call with the
+  // --force option, don't use Solr to retrieve the list of PIDs!
+  $forceable = array("Discover", "IndexSolr", "Purge", "DateCreatedFix");
+  $forced = array("Discover", "DateCreatedFix");
+
+  if (in_array($fix, $forceable)) {
+    if (in_array($fix, $forced)) {
+      $force = drush_get_option('force', TRUE);
+      $repeat = drush_get_option('repeat', 1000);    // repeat at least 1000 times
+    } else {
+      $force = drush_get_option('force', FALSE);
+      $repeat = drush_get_option('repeat', 0);
+    }
+  }
+
+  if (in_array($fix, $forced) || (in_array($fix, $forceable) && $force)) {
     list($ns, $pidSpec) = explode(':', $first);
+    $preOpts['all_pids'] = idu_drush_prep($first, $last, $pidn, $range, $ns, TRUE);  // get a list of all eligible PIDs found in Solr
     list($first, $last) = explode('-', $pidSpec);
     if ($last) {
       for ($range=0, $i=$first; $i<=$last; $i++) {
-        $pids[] = $i;
+        $pids[] = "$ns:$i";
         $range++;
       }
     } else {
-      $pids[0] = $first;
-      $range = 1;
+      for ($range=0,$i=0; $i<$repeat; $i++) {
+        $next = $first + $i;
+        $pids[] = "$ns:$next";
+        $range++;
+      }
     }
     $pidn = $first;
   } else {
@@ -1027,7 +1056,7 @@ function idu_drush_fix_Clean($pid, $options=NULL) {
   $count = 0;
   foreach ($object as $ds) {
     $id = $ds->id;
-    if (!in_array($id,$keep)) {
+    if (!in_array($id, $keep)) {
       ++ $count;
       unset($object[$id]);
 //  if (($ds->state != 'D') && (!in_array($id,$keep))) {
@@ -1470,9 +1499,10 @@ function idu_drush_fix_DateCreatedFix($pid) {
   module_load_include('inc', 'icu', 'icu_drush');
 
   // For any exception, report and skip this PID
-  if (!$object = _idu_Repository()->getObject($pid)) {
-    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
-    return 0;
+  try {
+    $object = idu_repo( )->getObject($pid);
+  } catch (Exception $e) {
+    return 0;  // for any exception...skip this PID
   }
 
   // Fetch options.
@@ -1492,31 +1522,49 @@ function idu_drush_fix_DateCreatedFix($pid) {
   $target = $mx->query("/mods:mods/mods:originInfo/mods:dateCreated");
   foreach ($target as $key => $node) {
     $dateCreated = $node->nodeValue;
-    $trimmed = ltrim($dateCreated,"-");   // trim away any leading negative sign
+    $bce = (strpos($dateCreated, '-') === 0 ? "-" : "");
+    $trimmed = ltrim($dateCreated, "-");   // trim away any leading negative sign
 
-    if (!$date = strtotime($trimmed)) {
-      echo "Object $pid MODS originInfo/dateCreated element value '$dateCreated' does not appear to be valid!\n";
+    $year = substr($trimmed, 0, 4);
+    if (strlen($trimmed) > 4 || !$date = strtotime($trimmed)) {
+      echo "Object $pid MODS originInfo/dateCreated element value '$dateCreated' does not appear to be a valid YYYY entry!\n";
       $count++;
 
       if (!$dryRun) {
-        // Blank the nodeValue.  NO, don't do this!
-        // $node->nodeValue = "";
+        $changed = FALSE;
+
+        // Set the nodeValue to a valid YYYY format, with $bce if necessary.
+        if (is_numeric($year)) {
+          $node->nodeValue = $bce.$year;
+          $changed = TRUE;
+        }
+
+        // If there is not already a dateOther...
+        $other = $mx->query("/mods:mods/mods:originInfo/mods:dateOther");
+        $found = FALSE;
+
+        foreach ($other as $parent) { $found = TRUE; }
 
         // Create a new dateOther element with a displayLabel attribute.
-        $element = $xml->createElement('dateOther', $dateCreated);
-        $attr = $xml->createAttribute('displayLabel');
-        $attr->value = 'Approx. Date of Creation';
-        $element->appendChild($attr);
+        if (!$found) {
+          $changed = TRUE;
+          $element = $xml->createElement('dateOther', $dateCreated);
+          $attr = $xml->createAttribute('displayLabel');
+          $attr->value = 'Approx. Date of Creation';
+          $element->appendChild($attr);
 
-        // Find the originInfo parent (should be only one) and append dateOther to it.
-        $parents = $mx->query("/mods:mods/mods:originInfo");
-        foreach ($parents as $parent) {
-          $parent->appendChild($element);
+          // Find the originInfo parent (should be only one) and append dateOther to it.
+          $parents = $mx->query("/mods:mods/mods:originInfo");
+          foreach ($parents as $parent) {
+            $parent->appendChild($element);
+          }
         }
 
         // Save the changes.
-        $content = $xml->saveXML();
-        $object['MODS']->setContentFromString($content);
+        if ($changed) {
+          $content = $xml->saveXML();
+          $object['MODS']->setContentFromString($content);
+        }
       }
     }
   }
@@ -1704,6 +1752,44 @@ function idu_drush_fix_Derivatives($pid) {
 }
 
 /**
+ * Drush idu_fix_* function to Discover objects not indexed in Solr.
+ *
+ * Invoke this function with an iduF process using a command of the form:
+ *   drush iduF $pids Discover
+ *
+ * @param string $pid
+ *   The PIDs to operate on.
+ * @param array $allPIDs
+ *   Should contain an 'all_pids' array of ALL elligible PIDs found in Solr.
+ * @return int
+ *   The number of target objects found, or zero if none.
+ */
+function idu_drush_fix_Discover($pid, $allPIDs) {
+  module_load_include('inc', 'icu', 'icu');
+
+  // Is this object already indexed in Solr?  If yes, skip it.
+  if (in_array($pid, $allPIDs['all_pids'])) { return 0; }
+
+  $pids = array( );
+  $last = $pidn = $range = $namespace = NULL;
+  $fname = "/tmp/object_list.csv";
+  $list = fopen($fname, "a");
+
+  // PID was not found...if the object exists we need to report it as discovered!
+  try {
+    $object = idu_repo( )->getObject($pid);
+  } catch (Exception $e) {
+    return 0;  // for any exception...skip this PID
+  }
+
+  // The object exists and was not found in our search...report it!
+  idu_drush_log(__FUNCTION__ . ": Object $pid exists but was NOT returned in our Solr query!", 'warning');
+  fputcsv($list, array($pid));
+
+  return 1;
+}
+
+/**
  * Drush idu_fix_* function to import lines of CSV data into existing object MODS.
  *
  * Note that the function idu_drush_import($ns, $data) must be CUSTOMIZED to act
@@ -1757,8 +1843,15 @@ function idu_drush_fix_ImportCSV($pid) {
  *   The number of repair operations performed, or zero if none.
  */
 function idu_drush_fix_IndexSolr($pid) {
-  idu_drush_update_solr_index($pid);
-  return 1;
+  $status = idu_drush_update_solr_index($pid);
+
+  // Check $status for "Number of warnings (see log): 0"...
+  if (strpos($status, "Number of warnings (see log): 0") > 0) {
+    return 1;
+  } else {
+    idu_drush_log(__FUNCTION__ . ": Number of Solr warnings was NOT zero for PID $pid!", 'warning');
+    return 0;
+  }
 }
 
 /**
