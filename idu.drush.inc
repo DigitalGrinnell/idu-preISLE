@@ -513,9 +513,9 @@ function drush_idu_iduFix($first, $fix) {
     fputcsv($list, array("Function is $fix"));
   }
 
-  // If this is a Discover/DateCreatedFix, or IndexSolr/Purge call with the
+  // If this is a forceable operation call with the
   // --force option, don't use Solr to retrieve the list of PIDs!
-  $forceable = array("Discover", "IndexSolr", "Purge", "DateCreatedFix");
+  $forceable = array("Discover", "IndexSolr", "Purge", "DateCreatedFix", "ChangeText");
   $forced = array("Discover", "DateCreatedFix");
 
   if (in_array($fix, $forceable)) {
@@ -987,6 +987,11 @@ function idu_drush_fix_ChangeText($pid, $options) {
     $content = $ds->content;
 
     foreach ($findReplace as $from => $to) {
+      if ($from === "0xC") {   // if $from is hex 0xC, replace with a space.
+        $from = chr(12);
+        $to = ' ';
+      }
+
       if (stripos($content, $from)) {
         if (is_null($xpath)) {
           $content = str_replace($from, $to, $content, $cnt);
@@ -1010,8 +1015,10 @@ function idu_drush_fix_ChangeText($pid, $options) {
     }
 
     if ($count > 0) {
+      $msg = "iduFix - ChangeText: $count changes.";
       if ($dryRun) {
-        idu_drush_post_to_file("iduFix - ChangeText: Zero of $count changes committed for object $pid due to the --dryRun option.", NULL, 'public://iduFix_progress.log');
+        idu_drush_log($msg." NO changes committed for object $pid due to the --dryRun option.", 'status');
+        idu_drush_post_to_file($msg." NO changes committed for object $pid due to the --dryRun option.", NULL, 'public://iduFix_progress.log');
       } else {
         $total += $count;
         $object[$dsid]->setContentFromString($content);
@@ -1843,6 +1850,24 @@ function idu_drush_fix_ImportCSV($pid) {
  *   The number of repair operations performed, or zero if none.
  */
 function idu_drush_fix_IndexSolr($pid) {
+
+  try {
+    $object = idu_repo( )->getObject($pid);
+  } catch (Exception $e) {
+    return 0;  // for any exception...skip this PID
+  }
+
+  // Scan the MODS, DC and FULL_TEXT datastreams looking for non-XML characters.
+  $dsids = array("MODS", "DC", "FULL_TEXT");
+  foreach ($dsids as $dsid) {
+    if ($ds = $object->getDatastream($dsid)) {
+      $content = $ds->content;
+      if ($x = hasInvalidXml($content)) {
+        idu_drush_log(__FUNCTION__ . ": The $dsid datastream of object $pid contains $x invalid characters!", 'error');
+      }
+    }
+  }
+
   $status = idu_drush_update_solr_index($pid);
 
   // Check $status for "Number of warnings (see log): 0"...
@@ -3889,4 +3914,37 @@ function idu_drush_import_from_CSV($ns, $data) {
     }
   }
   return 0;
+}
+
+/**
+ * Counts invalid XML characters in a string.
+ *
+ * @param $value
+ *   The XML content string.
+ * @return bool|int
+ *   False or a count of invalid characters in $value.
+ */
+function hasInvalidXml($value) {
+  // $ret = "";
+  $x10FFFF = hexdec('10FFFF');
+  $ret = 0;
+
+  if (empty($value)) { return $ret; }
+
+  $length = strlen($value);
+  for ($i=0; $i < $length; $i++) {
+    $current = ord($value{$i});
+    if (($current === 9) ||
+      ($current === 10) ||
+      ($current === 13) ||
+      (($current >= 32) && ($current <= 55295)) ||
+      (($current >= 57344) && ($current <= 65533)) ||
+      (($current >= 65536) && ($current <= $x10FFFF))) {
+      // $ret .= chr($current);
+    } else {
+      // $ret .= " ";
+      $ret++;
+    }
+  }
+  return $ret;
 }
