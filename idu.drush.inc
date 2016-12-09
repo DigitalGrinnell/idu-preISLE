@@ -515,7 +515,7 @@ function drush_idu_iduFix($first, $fix) {
 
   // If this is a forceable operation call with the
   // --force option, don't use Solr to retrieve the list of PIDs!
-  $forceable = array("Discover", "IndexSolr", "Purge", "DateCreatedFix", "ChangeText");
+  $forceable = array("Discover", "IndexSolr", "Purge", "DateCreatedFix", "ChangeText", "Derivatives", "Relax");
   $forced = array("Discover", "DateCreatedFix");
 
   if (in_array($fix, $forceable)) {
@@ -526,6 +526,8 @@ function drush_idu_iduFix($first, $fix) {
       $force = drush_get_option('force', FALSE);
       $repeat = drush_get_option('repeat', 0);
     }
+  } else if (drush_get_option('force', FALSE)) {
+    drush_log("The specified Fix function '$function' does not support use of the --force option!", 'warning');
   }
 
   if (in_array($fix, $forced) || (in_array($fix, $forceable) && $force)) {
