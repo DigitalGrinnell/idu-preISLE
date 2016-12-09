@@ -500,6 +500,8 @@ function drush_idu_iduDrupal($op) {
  */
 function drush_idu_iduFix($first, $fix) {
 
+  $verbose = drush_get_option('verbose', FALSE);
+
   // Get the fix function parameter...
   $function = 'idu_drush_fix_'.$fix;
   if (!function_exists($function)) { drush_log("The specified Fix function '$function' does not exist!", 'error'); }
@@ -589,6 +591,7 @@ function drush_idu_iduFix($first, $fix) {
 
   // If there's only one PID... process it.
   if (count($pids) === 1) {
+    if ($verbose)  { idu_drush_log("Processing PID $pids[0].", 'status'); }
     $count += call_user_func($function, $pids[0], $preOpts);
     idu_drush_post_to_file("iduFix - $fix: $pids[0] complete.", NULL, 'public://iduFix_progress.log');
     idu_drush_print_progress("iduFix - $fix", 0, 1);
@@ -598,6 +601,7 @@ function drush_idu_iduFix($first, $fix) {
     $range = count($pids);
     $i = 0;
     foreach ($pids as $pid => $label) {
+      if ($verbose)  { idu_drush_log("Processing PID $pid.", 'status'); }
       list($nsl, $pidn) = explode(':', $pid);
       if ($label && $ns === $nsl) {
         $count += call_user_func($function, $pid, $preOpts);
@@ -609,6 +613,7 @@ function drush_idu_iduFix($first, $fix) {
   } else {
     $i = 0;
     foreach ($pids as $pid) {
+      if ($verbose)  { idu_drush_log("Processing PID $pid.", 'status'); }
       $count += call_user_func($function, $pid, $preOpts);
       idu_drush_post_to_file("iduFix - $fix: $pid complete.", NULL, 'public://iduFix_progress.log');
       idu_drush_print_progress("iduFix - $fix", $i++, $range);
