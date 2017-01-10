@@ -523,8 +523,8 @@ function drush_idu_iduFix($pspec, $fix) {
 
   // If this is a forceable operation called with the --force option, then
   // don't use Solr to retrieve the list of PIDs!
-  $forceable = array("Discover", "IndexSolr", "Purge", "DateCreatedFix", "ChangeText", "Derivatives", "PermissionsRelax", "List");
-  $forced = array("Discover", "DateCreatedFix");
+  $forced = array("Discover", "DateCreatedFix", "Last");
+  $forceable = array_merge($forced, array("IndexSolr", "Purge", "ChangeText", "Derivatives", "PermissionsRelax", "List"));
 
   $force = FALSE;
   $repeat = drush_get_option('repeat', 0);
@@ -535,17 +535,19 @@ function drush_idu_iduFix($pspec, $fix) {
       $repeat = drush_get_option('repeat', 1000);    // repeat at least 1000 times if --repeat is not set
     } else {
       $force = drush_get_option('force', FALSE);
+      if ($force) { $repeat = drush_get_option('repeat', 1000); }
     }
   } else if (drush_get_option('force', FALSE)) {
     drush_log("The specified Fix function '$function' does not support use of the --force option!", 'warning');
   }
 
-  # If $pspec is ns:last then build $spec as a ns:first-last range.
+  # If $pspec is ns:last then build $spec as a ns:first-last range.  Echo the PID that is 'last'.
   list($ns, $special) = explode(':', $pspec);
   if ($special === 'last') {
     list($ns, $first) = explode(':', variable_get($ns.'_last', $ns.':2'));
     $last = $first + $repeat;
     $spec = $ns . ':' . $first . '-' . $last;
+    drush_log("ns:last notation used.  '$ns:$first' was identifed as the last indexed PID.", 'status');
   } else {
     list($ns, $spec) = explode(':', $pspec);
     list($first, $last) = explode(':', $spec);
@@ -1948,9 +1950,11 @@ function idu_drush_fix_isConstituentOf($pid, $options) {
  *   The number of target objects found, or zero if none.
  */
 function idu_drush_fix_Last($pid) {
-  // For any exception, just skip this PID
-  if (!$object = _idu_Repository()->getObject($pid)) { return 0; }
-  // idu_drush_log(__FUNCTION__ . " Object $pid found.", 'status');
+  try {
+    $object = idu_repo( )->getObject($pid);
+  } catch (Exception $e) {
+    return 0;  // for any exception...skip this PID
+  }
 
   // Get the stored namespace_last value and ignore everything below it!
   list($ns, $pnum) = explode(':', $pid);
@@ -1960,9 +1964,10 @@ function idu_drush_fix_Last($pid) {
   if ($pnum > $lnum) {
     variable_set($variable, $pid);
     // idu_drush_log(__FUNCTION__ . " Object $pid found.  $variable now set to $pid.", 'status');
+    return 1;
   }
 
-  return 1;
+  return 0;
 }
 
 /**
