@@ -28,7 +28,7 @@ function idu_drush_command( ) {
   $items['iduFix'] = array(
     'description' => t("Attempts to apply the specified 'fix' to one or more existing PIDs."),
     'arguments'   => array(
-      'first' => t("First PID to process. The namespace (ns) portion of this PID defines the default primary namespace.  This parameter may be specified as 'ns:first-last' in place of the --repeat option, or 'ns:*' to operate on all collection objects.\n"),
+      'first' => t("First PID to process. The namespace (ns) portion of this PID defines the default primary namespace.  This parameter may be specified as 'ns:first-last' in place of the --repeat option, or 'ns:*' to operate on all collection objects.  A special entry in the form of ns:last can be used to specify starting at the highest ns:PID number which has been indexed in Solr.\n"),
       'fix'   => "Completes the name of the drush_idu_fix_NAME function to be called for each processed object.  Available Fix functions are:\n
 
       --- The first 2 commands may be automatically executed
@@ -139,6 +139,10 @@ function idu_drush_command( ) {
       isConstituentOf -
         Changes a literal isConstituentOf value to a proper
           attribute form.
+
+      Last -
+        Find the last (largest PID) indexed in Solr for the specified 
+          namespace and sets the namespace_last variable with it's value.
 
       List -
         Prints a list of objects matching the PID spec with --repeat,
@@ -367,7 +371,7 @@ function idu_drush_help($command) {
  * Examine common iduX command arguments/options and set control variables for subsequent processing.
  *
  * @param string $pidSpec
- *   The range (or single) PID argument as specified in the iduX command.
+ *   The range (or single or special) PID argument as specified in the iduX command.
  * @param int $last
  *   Returns the 'last' PID value based on the range specification, if any.  Note that $last may or may not be an existing object.
  * @param int $pidn
@@ -386,7 +390,17 @@ function idu_drush_prep($pidSpec, &$last, &$pidn, &$range, &$namespace) {
   $collection = drush_get_option('collection', NULL);
   $contentType = drush_get_option('contentType', NULL);
   $created = drush_get_option('createdAfter', NULL);
-  return icu_drush_prep($pidSpec, $last, $pidn, $range, $namespace, $after, $collection, $contentType, $created);
+
+  # Check for special namespace:last $pidSpec.
+  list($ns, $special) = explode(':', $pidSpec);
+  if ($special === 'last') {
+    $variable = $ns . '_last';
+    $spec = variable_get($variable, $ns . ':2');
+  } else {
+    $spec = $pidSpec;
+  }
+
+  return icu_drush_prep($spec, $last, $pidn, $range, $namespace, $after, $collection, $contentType, $created);
 }
 
 /**
@@ -1922,6 +1936,35 @@ function idu_drush_fix_isConstituentOf($pid, $options) {
     }
     return 0;
   }
+}
+
+/**
+ * Drush idu_fix_* function to report the largest (last) PID found in Solr.
+ *
+ * Invoke this function with an iduF process using a command of the form:
+ *   drush iduF $pids Last
+ *
+ * @param string $pid
+ *   The PID to find.
+ * @return int
+ *   The number of target objects found, or zero if none.
+ */
+function idu_drush_fix_Last($pid) {
+  // For any exception, just skip this PID
+  if (!$object = _idu_Repository()->getObject($pid)) { return 0; }
+  // idu_drush_log(__FUNCTION__ . " Object $pid found.", 'status');
+
+  // Get the stored namespace_last value and ignore everything below it!
+  list($ns, $pnum) = explode(':', $pid);
+  $variable = $ns . '_last';
+  $last = variable_get($variable, $pid);
+  list($ns, $lnum) = explode(':', $last);
+  if ($pnum > $lnum) {
+    variable_set($variable, $pid);
+    // idu_drush_log(__FUNCTION__ . " Object $pid found.  $variable now set to $pid.", 'status');
+  }
+
+  return 1;
 }
 
 /**
