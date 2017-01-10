@@ -370,10 +370,11 @@ function idu_drush_help($command) {
 /**
  * Examine common iduX command arguments/options and set control variables for subsequent processing.
  *
- * @param string $pidSpec
- *   The range (or single or special) PID argument as specified in the iduX command.
+ * @param string $first
+ *   The range (or single) PID argument as specified in the iduX command.
  * @param int $last
- *   Returns the 'last' PID value based on the range specification, if any.  Note that $last may or may not be an existing object.
+ *   Returns the 'last' PID value based on the range specification, if any.
+ *   Note that $last may or may not be an existing object.
  * @param int $pidn
  *   Returns the integer PID number of 'range'.  Note that $pidn may or may not be an existing object.
  * @param int $range
@@ -384,23 +385,15 @@ function idu_drush_help($command) {
  *   An array of valid PIDs from the specified spec.
  *
  */
-function idu_drush_prep($pidSpec, &$last, &$pidn, &$range, &$namespace) {
+function idu_drush_prep($first, &$last, &$pidn, &$range, &$namespace) {
   module_load_include('inc', 'icu', 'icu_drush');
   $after = drush_get_option('modAfter', '2000-01-01T00:00:00Z');
   $collection = drush_get_option('collection', NULL);
   $contentType = drush_get_option('contentType', NULL);
   $created = drush_get_option('createdAfter', NULL);
-
-  # Check for special namespace:last $pidSpec.
-  list($ns, $special) = explode(':', $pidSpec);
-  if ($special === 'last') {
-    $variable = $ns . '_last';
-    $spec = variable_get($variable, $ns . ':2');
-  } else {
-    $spec = $pidSpec;
-  }
-
-  return icu_drush_prep($spec, $last, $pidn, $range, $namespace, $after, $collection, $contentType, $created);
+  $pids = icu_drush_prep($first, $lastPID, $pidn, $range, $namespace, $after, $collection, $contentType, $created);
+  list($ns, $last) = explode(':', $lastPID);
+  return $pids;
 }
 
 /**
@@ -507,13 +500,12 @@ function drush_idu_iduDrupal($op) {
  * subsequent objects in the same namespace.  Functions called must be of the form...
  *     $count = drush_idu_fix_OPERATION($pid, $findReplace=NULL, $dsid=NULL, $xpath=NULL);
  *
- * @param string $first
- *   First PID to process.
+ * @param string $pspec
+ *   The list of PIDS to process.
  * @param string $fix
  *   The Fix operation to be performed.  This string completes the name of an existing idu_drush_fix_* function.
  */
-function drush_idu_iduFix($first, $fix) {
-
+function drush_idu_iduFix($pspec, $fix) {
   $verbose = drush_get_option('verbose', FALSE);
 
   // Get the fix function parameter...
@@ -529,42 +521,47 @@ function drush_idu_iduFix($first, $fix) {
     fputcsv($list, array("Function is $fix"));
   }
 
-  // If this is a forceable operation call with the
-  // --force option, don't use Solr to retrieve the list of PIDs!
-  $forceable = array("Discover", "IndexSolr", "Purge", "DateCreatedFix", "ChangeText", "Derivatives", "Relax");
+  // If this is a forceable operation called with the --force option, then
+  // don't use Solr to retrieve the list of PIDs!
+  $forceable = array("Discover", "IndexSolr", "Purge", "DateCreatedFix", "ChangeText", "Derivatives", "PermissionsRelax", "List");
   $forced = array("Discover", "DateCreatedFix");
+
+  $force = FALSE;
+  $repeat = drush_get_option('repeat', 0);
 
   if (in_array($fix, $forceable)) {
     if (in_array($fix, $forced)) {
       $force = drush_get_option('force', TRUE);
-      $repeat = drush_get_option('repeat', 1000);    // repeat at least 1000 times
+      $repeat = drush_get_option('repeat', 1000);    // repeat at least 1000 times if --repeat is not set
     } else {
       $force = drush_get_option('force', FALSE);
-      $repeat = drush_get_option('repeat', 0);
     }
   } else if (drush_get_option('force', FALSE)) {
     drush_log("The specified Fix function '$function' does not support use of the --force option!", 'warning');
   }
 
-  if (in_array($fix, $forced) || (in_array($fix, $forceable) && $force)) {
-    list($ns, $pidSpec) = explode(':', $first);
-    $preOpts['all_pids'] = idu_drush_prep($first, $last, $pidn, $range, $ns, TRUE);  // get a list of all eligible PIDs found in Solr
-    list($first, $last) = explode('-', $pidSpec);
-    if ($last) {
-      for ($range=0, $i=$first; $i<=$last; $i++) {
-        $pids[] = "$ns:$i";
-        $range++;
-      }
-    } else {
-      for ($range=0,$i=0; $i<$repeat; $i++) {
-        $next = $first + $i;
-        $pids[] = "$ns:$next";
-        $range++;
-      }
-    }
-    $pidn = $first;
+  # If $pspec is ns:last then build $spec as a ns:first-last range.
+  list($ns, $special) = explode(':', $pspec);
+  if ($special === 'last') {
+    list($ns, $first) = explode(':', variable_get($ns.'_last', $ns.':2'));
+    $last = $first + $repeat;
+    $spec = $ns . ':' . $first . '-' . $last;
   } else {
-    if (!$pids = idu_drush_prep($first, $last, $pidn, $range, $ns, TRUE)) { return; }  // Get the PIDs and initialize the loop..
+    list($ns, $spec) = explode(':', $pspec);
+    list($first, $last) = explode(':', $spec);
+    if (!$last) { $last = $first + $repeat; }
+  }
+  $spec = $ns . ':' . $first . '-' . $last;
+
+  # If this retrieve has a valid --force option.
+  if ($force) {
+    $preOpts['all_pids'] = idu_drush_prep($spec, $junk, $pidn, $range, $ns, TRUE);  // get all eligible PIDs found in Solr
+    for ($range=0, $i=$first; $i<=$last; $i++) {
+      $pids[] = "$ns:$i";
+      $range++;
+    }
+  } else {
+    if (!$pids = idu_drush_prep($spec, $last, $pidn, $range, $ns, TRUE)) { return; }  // Get PIDs and initialize the loop..
   }
 
   // Pre-process some options...
@@ -1676,9 +1673,10 @@ function idu_drush_fix_DCTransform($pid) {
 function idu_drush_fix_Derivatives($pid) {
 
   // For any exception, report and skip this PID
-  if (!$object = _idu_Repository()->getObject($pid)) {
-    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
-    return 0;
+  try {
+    $object = idu_repo( )->getObject($pid);
+  } catch (Exception $e) {
+    return 0;  // for any exception...skip this PID
   }
 
   $only = drush_get_option('only', '*');
@@ -1985,9 +1983,10 @@ function idu_drush_fix_List($pid) {
   $list = fopen($fname,"a");
 
   // For any exception, report and skip this PID
-  if (!$object = _idu_Repository()->getObject($pid)) {
-    idu_drush_log(__FUNCTION__ . " ($pid) returned NO object!", 'error');
-    return 0;
+  try {
+    $object = idu_repo( )->getObject($pid);
+  } catch (Exception $e) {
+    return 0;  // for any exception...skip this PID
   }
 
   idu_drush_log(__FUNCTION__ . " Object $pid found.", 'status');
@@ -2257,9 +2256,10 @@ function idu_drush_fix_MIMEFix($pid) {
 function idu_drush_fix_PermissionsRelax($pid, $options=NULL) {
 
   // For any exception, report and skip this PID
-  if (!$object = _idu_Repository()->getObject($pid)) {
-    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
-    return 0;
+  try {
+    $object = idu_repo( )->getObject($pid);
+  } catch (Exception $e) {
+    return 0;  // for any exception...skip this PID
   }
 
   if (isset($options)) {
