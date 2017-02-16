@@ -637,6 +637,11 @@ function drush_idu_iduFix($pspec, $fix) {
   $finish = date('H:i:s');
   idu_drush_log("Completed $count 'iduFix - $fix' operations at $finish. \n", 'status');
 
+  if ($fix === 'Last') {
+    $found_last = variable_get($ns.'_last', 'Undefined');
+    idu_drush_log("grinnell:last is now '$found_last'.\n", 'status');
+  }
+
   // If this is the List command, close the .csv file in /tmp.
   if ($list) { fclose($list); }
 
