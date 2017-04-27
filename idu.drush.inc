@@ -157,8 +157,7 @@ function idu_drush_command( ) {
           --sibling PID.
 
       MIMEFix -
-        Corrects errant image/jpg and image/tif MIME types,
-          changing them to image/jpeg and image/tiff.
+        Changes errant object MIME types from --find to --replace.
 
       PermissionsRelax -
         Applies a 'relaxed' POLICY to an object to make it visible
@@ -183,6 +182,10 @@ function idu_drush_command( ) {
 
       PurgeDatastream -
         Deletes the --dsid datastream.  Be careful with this one too!
+
+      PurgeDSVersions -
+        Purges all but the current copy of an existing object's --dsid 
+        datastream. 
 
       PurgeElements -
         Removes all --xpath matched elements from the specified --dsid      
@@ -636,6 +639,11 @@ function drush_idu_iduFix($pspec, $fix) {
   // Done.
   $finish = date('H:i:s');
   idu_drush_log("Completed $count 'iduFix - $fix' operations at $finish. \n", 'status');
+
+  if ($fix === 'Last') {
+    $found_last = variable_get($ns.'_last', 'Undefined');
+    idu_drush_log("grinnell:last is now '$found_last'.\n", 'status');
+  }
 
   // If this is the List command, close the .csv file in /tmp.
   if ($list) { fclose($list); }
@@ -1673,6 +1681,8 @@ function idu_drush_fix_DCTransform($pid) {
  *   The number of repair operations performed, or zero if none.
  */
 function idu_drush_fix_Derivatives($pid) {
+  module_load_include('inc', 'islandora', 'includes/derivatives');
+
 
   // For any exception, report and skip this PID
   try {
@@ -1682,6 +1692,7 @@ function idu_drush_fix_Derivatives($pid) {
   }
 
   $only = drush_get_option('only', '*');
+  $dsid = drush_get_option('dsid', 'OBJ');
 
   // Check for --mime option.  If present and the object has no OBJ or the OBJ MIME is not of the correct
   // type, then skip this object.
@@ -1700,6 +1711,12 @@ function idu_drush_fix_Derivatives($pid) {
   $cModel = $rels[0]['object']['value'];
 
   // Create new derivatives.
+  $logging_results = islandora_do_derivatives($object, array(
+    'source_dsid' => $dsid, 'force' => TRUE ));
+  islandora_derivative_logging($logging_results);
+  $count++;
+
+  /*
   switch ($cModel) {
     case 'islandora:sp_basic_image' :
       if (module_exists('islandora_basic_image')) {
@@ -1774,7 +1791,7 @@ function idu_drush_fix_Derivatives($pid) {
         if ($fit['success']) { ++$count; }
       }
       break;
-  }
+  } */
 
   return $count;
 }
@@ -2206,8 +2223,7 @@ return $count;
 }
 
 /**
- * Drush idu_drush_fix_* function to correct image/tif and image/jpg MIME types, changing them to image/tiff or
- * image/jpeg as needed.
+ * Drush idu_drush_fix_* function to change object MIME types from --find to --replace.
  *
  * Invoke this function using 'drush iduF <pid> MIMEFix'.
  *
@@ -2224,15 +2240,24 @@ function idu_drush_fix_MIMEFix($pid) {
     return 0;
   }
 
+  if (!$find = drush_get_option('find', False)) {
+    idu_drush_log('This command requires a --find option!', 'error');
+    return 0;
+  }
+
+  if (!$replace = drush_get_option('replace', False)) {
+    idu_drush_log('This command requires a --replace option!', 'error');
+    return 0;
+  }
+
+  $dsid = drush_get_option('dsid', 'OBJ');
+
   $count = 0;
   foreach ($object as $ds) {
     if ($ds->state != 'A') {
       continue;
-    } else if ($ds->mimetype === 'image/tif') {
-      $ds->mimetype = 'image/tiff';
-      ++ $count;
-    } else if ($ds->mimetype === 'image/jpg') {
-      $ds->mimetype = 'image/jpeg';
+    } else if ($ds->id === $dsid && $ds->mimetype === $find) {
+      $ds->mimetype = $replace;
       ++ $count;
     }
   }
@@ -2420,6 +2445,55 @@ function idu_drush_fix_PurgeDatastream($pid) {
 
   return 1;
 }
+
+/**
+ * Drush idu_fix_* function to purge old versions of a specified datastream.
+ *
+ * Invoke this function with an iduF process using a command of the form:
+ *   drush iduF $pids PurgeDSVersions --dsid=MODS
+ *
+ * Applicable options are:
+ *   --dsid=The existing datastream ID such as 'MODS', 'MADS', 'DC', etc.  Defaults to 'MODS'.
+ *
+ * @param string $pid
+ *   The PID (from the list of first-to-last) to operate on.
+ * @return int
+ *   The number of repair operations performed, or zero if none.
+ */
+function idu_drush_fix_PurgeDSVersions($pid) {
+  $verbose = drush_get_option('verbose', FALSE);
+
+  // For any exception, report and skip this PID
+  if (!$object = _idu_Repository()->getObject($pid)) {
+    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    return 0;
+  }
+
+  // Check that the specified datastream exists... if not, we're done.
+  $dsid = drush_get_option('dsid', 'MODS');
+  if (!$ds = $object[$dsid]) { return 0; }
+
+  $return = 0;
+
+  // Call the Tuque functions to loop on versions and remove them from the bottom up.
+  $count = $ds->count();
+  while ($count-- > 5) {
+  //  if ($ds->offsetExists($count)) {
+      try {
+        if ($verbose) { idu_drush_log(__FUNCTION__." - Purging $dsid version $count for $pid.", 'status'); }
+        $ds->offsetUnset($count);
+        $return++;
+      } catch (Exception $e) {
+        echo 'Caught exception: ', $e->getMessage(), "\n";
+      }
+  //  }
+  }
+
+  $remain = $count + 1;
+  idu_drush_log(__FUNCTION__." - Purge of $dsid versions for $pid is complete.  $remain versions remain.", 'status');
+  return $return;
+}
+
 
 /**
  * Drush idu_fix_* function to purge all --xpath matched metadata elements from
