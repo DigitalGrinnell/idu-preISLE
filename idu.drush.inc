@@ -553,21 +553,27 @@ function drush_idu_iduFix($pspec, $fix) {
     drush_log("ns:last notation used.  '$ns:$first' was identifed as the last indexed PID.", 'status');
   } else {
     list($ns, $spec) = explode(':', $pspec);
-    list($first, $last) = explode(':', $spec);
+    list($first, $last) = explode('-', $spec);
     if (!$last) { $last = $first + $repeat; }
   }
   $spec = $ns . ':' . $first . '-' . $last;
 
   # If this retrieve has a valid --force option.
   if ($force) {
-    $preOpts['all_pids'] = idu_drush_prep($spec, $junk, $pidn, $range, $ns, TRUE);  // get all eligible PIDs found in Solr
-    for ($range=0, $i=$first; $i<=$last; $i++) {
-      $pids[] = "$ns:$i";
-      $range++;
+    // The next operations depend on Solr so if a numeric range has been specified, make sure all valid objects in that range have been indexed!
+    for ($i = $first; $i <= $last; $i++) {
+      $status = idu_drush_update_solr_index("$ns:$i");
     }
-  } else {
-    if (!$pids = idu_drush_prep($spec, $last, $pidn, $range, $ns, TRUE)) { return; }  // Get PIDs and initialize the loop..
   }
+
+//  $preOpts['all_pids'] = idu_drush_prep($spec, $junk, $pidn, $range, $ns, TRUE);  // get all eligible PIDs found in Solr
+//    for ($range=0, $i=$first; $i<=$last; $i++) {
+//      $pids[] = "$ns:$i";
+//      $range++;
+//    }
+//  } else {
+    if (!$pids = idu_drush_prep($spec, $last, $pidn, $range, $ns, TRUE)) { return; }  // Get PIDs and initialize the loop..
+//  }
 
   // Pre-process some options...
   // Check for a --substitutionsFile option, instead of $find and $replace, and process accordingly.
@@ -2012,7 +2018,7 @@ function idu_drush_fix_List($pid) {
   }
 
   idu_drush_log(__FUNCTION__ . " Object $pid found.", 'status');
-  fputcsv($list,array($pid));
+  if ($list) { fputcsv($list, array($pid)); }
 
   return 1;
 }
@@ -2398,7 +2404,14 @@ function idu_drush_fix_Purge($pid, $options=NULL) {
     }
   } */
 
-  idu_repo( )->purgeObject($pid);
+  $dryRun = drush_get_option('dryRun', FALSE);
+
+  if (!$dryRun) {
+    idu_repo( )->purgeObject($pid);
+  } else {
+    idu_drush_log(__FUNCTION__ . "$pid was found but NOT purged due to use of --dryRun.", 'info');
+  }
+
   return 1;
 }
 
