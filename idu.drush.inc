@@ -246,7 +246,7 @@ function idu_drush_command( ) {
       'csv'       => t("Specifies the path of a CSV file to be read. Defaults to public://data.csv.\n"),
       'date'      => t("Specifies a dc:date value for the UpdateDC fix.  Default is 'Unspecified'.\n"),
       'dryRun'    => t("If set, this option instructs the operation to identify and count changes, but not commit then.\n"),
-      'dsid'      => t("Specifies the datastream ID in which to make changes.\n"),
+      'dsid'      => t("Specifies the datastream ID, or special 'LABEL', in which to make changes.\n"),
       'find'      => t("Specifies text to be found (and in some cases replaced).\n"),
       'fixName'   => t("If set, this option instructs UpdateDC to ensure that a MODS /name/namePart[not(@*)] element exists.\n"),
       'force'     => t("If set, this option instructs IndexSolr and other commands NOT to use Solr to fetch a list of objects.\n"),
@@ -558,22 +558,17 @@ function drush_idu_iduFix($pspec, $fix) {
   }
   $spec = $ns . ':' . $first . '-' . $last;
 
-  # If this retrieve has a valid --force option.
+  // If this retrieve has a valid --force option.
+  // The next operations depend on Solr so if a numeric range has been specified, make sure all valid objects in that range have been indexed!
   if ($force) {
-    // The next operations depend on Solr so if a numeric range has been specified, make sure all valid objects in that range have been indexed!
     for ($i = $first; $i <= $last; $i++) {
       $status = idu_drush_update_solr_index("$ns:$i");
     }
   }
 
-//  $preOpts['all_pids'] = idu_drush_prep($spec, $junk, $pidn, $range, $ns, TRUE);  // get all eligible PIDs found in Solr
-//    for ($range=0, $i=$first; $i<=$last; $i++) {
-//      $pids[] = "$ns:$i";
-//      $range++;
-//    }
-//  } else {
-    if (!$pids = idu_drush_prep($spec, $last, $pidn, $range, $ns, TRUE)) { return; }  // Get PIDs and initialize the loop..
-//  }
+  // $preOpts['all_pids'] = idu_drush_prep($spec, $junk, $pidn, $range, $ns, TRUE);  // get all eligible PIDs found in Solr
+
+  if (!$pids = idu_drush_prep($spec, $last, $pidn, $range, $ns, TRUE)) { return; }  // Get PIDs and initialize the loop..
 
   // Pre-process some options...
   // Check for a --substitutionsFile option, instead of $find and $replace, and process accordingly.
@@ -1014,10 +1009,26 @@ function idu_drush_fix_ChangeText($pid, $options) {
   $xpath = drush_get_option('xpath', NULL);
   $dryRun = drush_get_option('dryRun', FALSE);
 
-  $total = $cnt = 0;
+  $total = $cnt = $count = 0;
+  $label = $object->label;
 
-  if ($ds = $object[$dsid]) {
-    $count = 0;
+  // If --dsid=LABEL then this find/replace is with respect to the object's Label...
+  if ($dsid === 'LABEL') {
+    foreach ($findReplace as $from => $to) {
+      if ($from === "0xC") {   // if $from is hex 0xC, replace with a space.
+        $from = chr(12);
+        $to = ' ';
+      }
+
+      if (stripos("_$label", $from)) {
+        $label = str_replace($from, $to, $label, $cnt);
+        $count += $cnt;
+        $label = ltrim($label, "_");
+      }
+    }
+
+  // Otherwise, open the specified datastream and go to work...
+  } else if ($ds = $object[$dsid]) {
     $content = $ds->content;
 
     foreach ($findReplace as $from => $to) {
@@ -1030,7 +1041,8 @@ function idu_drush_fix_ChangeText($pid, $options) {
         if (is_null($xpath)) {
           $content = str_replace($from, $to, $content, $cnt);
           $count += $cnt;
-        } else {
+        }
+        else {
           $xml = new DOMDocument;
           $xml->loadXML($content);
           $dx = new DOMXPath($xml);
@@ -1040,24 +1052,27 @@ function idu_drush_fix_ChangeText($pid, $options) {
             if (strpos(' ' . $value, $from)) {
               $node->nodeValue = str_replace($from, $to, $value, $cnt);
               $count += $cnt;
-              $content = $xml->saveXML( );
+              $content = $xml->saveXML();
             }
           }
         }
       }
-
     }
+  }
 
-    if ($count > 0) {
-      $msg = "iduFix - ChangeText: $count changes.";
-      if ($dryRun) {
-        idu_drush_log($msg." NO changes committed for object $pid due to the --dryRun option.", 'status');
-        idu_drush_post_to_file($msg." NO changes committed for object $pid due to the --dryRun option.", NULL, 'public://iduFix_progress.log');
-      } else {
-        $total += $count;
-        $object[$dsid]->setContentFromString($content);
-        idu_drush_post_to_file("iduFix - ChangeText: $count changes committed for object $pid.", NULL, 'public://iduFix_progress.log');
-      }
+  if ($count > 0) {
+    $msg = "iduFix - ChangeText: $count changes.";
+    if ($dryRun) {
+      idu_drush_log($msg." NO changes committed for object $pid due to the --dryRun option.", 'status');
+      idu_drush_post_to_file($msg." NO changes committed for object $pid due to the --dryRun option.", NULL, 'public://iduFix_progress.log');
+    } else if ($dsid === 'LABEL') {
+      $total += $count;
+      $object->label = $label;
+      idu_drush_post_to_file("iduFix - ChangeText: $count changes committed for object $pid's label.", NULL, 'public://iduFix_progress.log');
+    } else {
+      $total += $count;
+      $object[$dsid]->setContentFromString($content);
+      idu_drush_post_to_file("iduFix - ChangeText: $count changes committed for object $pid.", NULL, 'public://iduFix_progress.log');
     }
   }
 
