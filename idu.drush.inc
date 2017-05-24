@@ -1657,15 +1657,14 @@ function idu_drush_fix_DCTransform($pid) {
   // Check for existing DC record... if not, we're done.
   if (!$dc = $object['DC']) { return 0; }
 
-  /* Disabling self-transform here at ICG hackdoc 24-May-2017
-  // Get the MODS self-transform.
+  /* Disabling self-transform here at ICG hackdoc 24-May-2017  Get the MODS self-transform.
   $xsl = new DOMDocument( );
   $transform = drush_get_option('self', 'public://cleanup_mods_and_reorder.xsl');
   if (!$xsl->load($transform)) { die("Failed to load Transform file '$transform!'"); }
   $xslt = new XSLTProcessor( );
-  $xslt->importStyleSheet($xsl);
+  $xslt->importStyleSheet($xsl); */
 
-  // Apply it to the MODS content.
+  /* Disabling self-transform here at ICG hackdoc 24-May-2017 Apply it to the MODS content.
   $document = DOMDocument::loadXml($object['MODS']->content);
   if ($doc = $xslt->transformToDoc($document)) {
     $after = $doc->saveXML();
