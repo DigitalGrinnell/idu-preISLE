@@ -1635,7 +1635,7 @@ function idu_drush_fix_DateCreatedFix($pid) {
  *   drush iduF first DCTransform
  *
  * Applicable options are:
- *   --self=<path to the MODS self-transform XSL file>  Defaults to public://cleanup_mods_and_reorder.xsl
+ *   --self=<path to the MODS self-transform XSL file>  Defaults to public://cleanup_mods_and_reorder.xsl  REMOVED!
  *   --xsl=<path to the MODS-to-DC transform XSL file>  Defaults to public://mods_to_dc_grinnell.xsl
  *
  * @param string $pid
@@ -1657,6 +1657,7 @@ function idu_drush_fix_DCTransform($pid) {
   // Check for existing DC record... if not, we're done.
   if (!$dc = $object['DC']) { return 0; }
 
+  /* Disabling self-transform here at ICG hackdoc 24-May-2017
   // Get the MODS self-transform.
   $xsl = new DOMDocument( );
   $transform = drush_get_option('self', 'public://cleanup_mods_and_reorder.xsl');
@@ -1670,6 +1671,7 @@ function idu_drush_fix_DCTransform($pid) {
     $after = $doc->saveXML();
     $object['MODS']->setContentFromString($after);
   }
+  */
 
   // Now, get the MODS-to-DC transform.
   $xsl = new DOMDocument( );
