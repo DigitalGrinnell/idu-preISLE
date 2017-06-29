@@ -117,8 +117,7 @@ function idu_drush_command( ) {
           is NOT set.  Note that --force defaults to TRUE for this command.
 
       DCTransform -
-        Applies the specified self-transform to an object's MODS then
-          applies a specified MODS-to-DC Transform.
+        Applies the specified MODS-to-DC Transform to an object.
 
       Derivatives -
         Attempts to regenerate ALL derivatives for an existing object.
@@ -1629,7 +1628,7 @@ function idu_drush_fix_DateCreatedFix($pid) {
 }
 
 /**
- * Drush idu_fix_* function to apply MODS self-transform and MODS-to-DC transforms to an existing object.
+ * Drush idu_fix_* function to apply MODS-to-DC transforms to an existing object.
  *
  * Invoke this function with an iduF process using a command of the form:
  *   drush iduF first DCTransform
@@ -3780,8 +3779,8 @@ function idu_build_creators_element($object) {
     $mx->registerNamespace($mods_ns, $mods_nsU);
 
     // Find all /mods/name/role/roleTerm[text()='creator' or text()='author' or
-    // text()='artist']/../.. and return the namePart[not(@type)] value.
-    $creators = $mx->query("/mods:mods/mods:name/mods:role/mods:roleTerm[text()='creator' or text()='author' or text()='artist']/../../mods:namePart[not(@type)]");
+    // text()='artist' or text()='interviewee']/../.. and return the namePart[not(@type)] value.
+    $creators = $mx->query("/mods:mods/mods:name/mods:role/mods:roleTerm[text()='creator' or text()='author' or text()='artist' or text()='interviewee']/../../mods:namePart[not(@type)]");
 
     // Return a new string built from creator field values.
     $statement = "";
