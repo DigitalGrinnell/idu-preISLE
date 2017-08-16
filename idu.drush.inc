@@ -50,6 +50,10 @@ function idu_drush_command( ) {
           derived.  Default values for date and creator are
           'Unspecified' and 'Unknown'.  Use --fixName to ensure that
           MODS records have a valid /name/namePart[not(@*)] element.
+          
+          Options: 
+            --hidden=FALSE  If TRUE a /mods/extension/hidden_creators element is 
+               created instead of /mods/extension/creators.
 
       --- The commands which follow are never automatically executed ---
       
@@ -75,6 +79,10 @@ function idu_drush_command( ) {
           title=dateCreated, and 
           contents=date('now')
 
+      ChangeDatastream -
+        Changes the --dsid datastream's LABEL to --title, OR its ID to 
+          --replace for an existing object.  
+          
       ChangeText -
         Changes --find text to --replace either in general or within the
           value of a specified --xpath.
@@ -206,6 +214,11 @@ function idu_drush_command( ) {
         Removes duplicate elements from the --dsid datastream of an existing
           object.  Use the --dryRun option to report duplicates only.
 
+      RemoveEmptyCues -
+        Removes empty cue elements from the --dsid (default is MODS) datastream 
+          of an existing oral history object.  Use the --dryRun option to 
+          report only.
+
       RenameDatastream -
         Changes the DSID of the named --dsid datastream to one named 
           --replace, and if --self is specified, runs the self transform on 
@@ -214,6 +227,11 @@ function idu_drush_command( ) {
       ReportChildDuplicates -
         Echo the MODS elements of a child object that are duplicated in its 
         parent.
+
+      Special -
+        Based on ChangeText...this command changes to meet special needs! 
+
+        Options: dsid, xpath, dryRun.
 
       Thumbnail -
         Applies the specified thumbnail image to an object.
@@ -249,12 +267,14 @@ function idu_drush_command( ) {
       'find'      => t("Specifies text to be found (and in some cases replaced).\n"),
       'fixName'   => t("If set, this option instructs UpdateDC to ensure that a MODS /name/namePart[not(@*)] element exists.\n"),
       'force'     => t("If set, this option instructs IndexSolr and other commands NOT to use Solr to fetch a list of objects.\n"),
+      'hidden'    => t("If set for UpdateDC, this option creates /mods/extension/hidden_creators instead /mods/extension/creators.\n"),
       'ignoreOBJ' => t("If TRUE, this option tells 'ChangeCompound' that no OBJ is required when changing a compoundCModel to another type.\n"),
       'image'     => t("Specifies the path to a jpeg image to be applied by the specified Fix operation.  Defaults to public://ImageNotAvailableTIFF_TN.jpg.\n"),
       'mime'      => t("Specifies the OBJ MIME type of objects to process.  Defaults to 'image/tiff'.\n"),
       'only'      => t("Specifies the ONLY DSID to be regenerated, --only=TECHMD is one example. Defaults to * for all derivatives.\n"),
       'parent'    => t("Specifies the PID of an existing parent object in need of a child.\n"),
       'reorder'   => t("If set, this option instructs SelfTransform to run public://reorder_mods.xsl after the initial self-transform.\n"),
+      'reindex'   => t("When used in combination with --force this option forces a pre-emptive re-indexing of objects.\n"),
       'replace'   => t("Specifies the text that 'find' will be replaced with.\n"),
       'retire'    => t("Specifies one collection that target objects are to be removed from when using the CorrectCollections command.\n"),
       'self'      => t("Specifies the path to the self-transform XSL file to be applied. Defaults to public://cleanup_mods_and_reorder.xsl.\n"),
@@ -530,6 +550,7 @@ function drush_idu_iduFix($pspec, $fix) {
 
   $force = FALSE;
   $repeat = drush_get_option('repeat', 0);
+  $reindex = drush_get_option('reindex', FALSE);
 
   if (in_array($fix, $forceable)) {
     if (in_array($fix, $forced)) {
@@ -557,9 +578,9 @@ function drush_idu_iduFix($pspec, $fix) {
   }
   $spec = $ns . ':' . $first . '-' . $last;
 
-  // If this retrieve has a valid --force option.
+  // If this retrieve has a valid --force option without --reindex...
   // The next operations depend on Solr so if a numeric range has been specified, make sure all valid objects in that range have been indexed!
-  if ($force) {
+  if ($force && $reindex) {
     for ($i = $first; $i <= $last; $i++) {
       $status = idu_drush_update_solr_index("$ns:$i");
     }
@@ -960,6 +981,70 @@ function idu_drush_fix_ChangeCompound($pid) {
 }
 
 /**
+ * Drush idu_fix_* function to change the LABEL or ID of a specified datastream in
+ * an existing object.
+ *
+ * Invoke this function with an iduF process using a command of the form:
+ *   drush iduF $pids ChageDatastream --dsid=TRANSCRIPT --label=IOH-Transcript
+ *
+ * Applicable options are:
+ *   --dsid=The datastream ID to be operated on.  Defaults to 'TRANSCRIPT'.
+ *   --title=The datastream's new LABEL.  Has no default.
+ *   --replace=The datastream's new ID.   Has no default.
+ *
+ * @param string $pid
+ *   The PID (from the list of first-to-last) to operate on.
+ * @return int
+ *   The number of repair operations performed, or zero if none.
+ */
+function idu_drush_fix_ChangeDatastream($pid) {
+
+  // For any exception, report and skip this PID
+  if (!$object = _idu_Repository()->getObject($pid)) {
+    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    return 0;
+  }
+
+  // Get options...
+  $dsid = drush_get_option('dsid', 'TRANSCRIPT');
+  $label = drush_get_option('title', FALSE);
+  $id = drush_get_option('replace', FALSE);
+
+  // Get existing datastream...
+  if (!$ds = $object[$dsid]) {
+    idu_drush_log(__FUNCTION__." ($pid) returned NO $dsid datastream!", 'warning');
+    return 0;
+  }
+
+  $content = $ds->content;
+  $oldLabel = $ds->label;
+  $mime = $ds->mimeType;
+  $control = $ds->controlGroup;
+
+  if ($label) {
+    $newLabel = $label;
+  } else {
+    $newLabel = $oldLabel;
+  }
+
+  if ($id) {
+    $newDSID = $id;
+  } else {
+    $newDSID = $dsid;
+  }
+
+  // Delete the old datastream.
+  unset($object[$dsid]);
+
+  // Make the new datastream copy.  Give it the same mime type and controlGroup as before.
+  $newDS = idu_copy_datastream($object, NULL, $mime, $control, $newDSID, $newLabel, $content);
+  $object->ingestDatastream($newDS);
+
+  return 1;
+}
+
+
+/**
  * Drush idu_fix_* function to change the text of elements in the target datastream and xpath.
  *
  * Invoke this function via iduF and the 'ChangeText' operation parameter.  Something like this...
@@ -1081,7 +1166,7 @@ function idu_drush_fix_ChangeText($pid, $options) {
 /**
  * Drush idu_fix_* function removes unnecessary datastreams from an existing object.
  *
- * Invoke this function during iduC process using an option of the form:
+ * Invoke this function during iduF process using an option of the form:
  *   drush iduF <pid> Clean
  *
  * @param int $r
@@ -1103,7 +1188,7 @@ function idu_drush_fix_Clean($pid, $options=NULL) {
 
   $keep = array('DC','OBJ','RELS-EXT','MODS','MADS','TN','JP2','JPG','PDF',
     'MEDIUM_SIZE','MP4','PREVIEW','FULL_TEXT','PROXY_MP3','OCR','islandora_workflow',
-    'POLICY','Old_POLICY');
+    'POLICY','Old_POLICY', 'TRANSCRIPT', 'TECHMD', 'MEDIATRACK', 'INDEXMEDIATRACK');
 
   // Loop through the datastreams and mark as Deleted any that are NOT in $keep
   // and not already marked as Deleted.
@@ -1581,6 +1666,14 @@ function idu_drush_fix_DateCreatedFix($pid) {
     $trimmed = ltrim($dateCreated, "-");   // trim away any leading negative sign
 
     $year = substr($trimmed, 0, 4);
+    if (!is_numeric($year)) {
+      if (preg_match('/\b\d{4}\b/', $trimmed, $matches)) {
+        $year = $matches[0];
+      } else {
+        $year = FALSE;
+      }
+    }
+
     if (strlen($trimmed) > 4 || !$date = strtotime($trimmed)) {
       echo "Object $pid MODS originInfo/dateCreated element value '$dateCreated' does not appear to be a valid YYYY entry!\n";
       $count++;
@@ -1589,7 +1682,7 @@ function idu_drush_fix_DateCreatedFix($pid) {
         $changed = FALSE;
 
         // Set the nodeValue to a valid YYYY format, with $bce if necessary.
-        if (is_numeric($year)) {
+        if ($year) {
           $node->nodeValue = $bce.$year;
           $changed = TRUE;
         }
@@ -1605,7 +1698,7 @@ function idu_drush_fix_DateCreatedFix($pid) {
           $changed = TRUE;
           $element = $xml->createElement('dateOther', $dateCreated);
           $attr = $xml->createAttribute('displayLabel');
-          $attr->value = 'Approx. Date of Creation';
+          $attr->value = 'Date Created';
           $element->appendChild($attr);
 
           // Find the originInfo parent (should be only one) and append dateOther to it.
@@ -2702,7 +2795,7 @@ function idu_drush_fix_RemoveDatastreams($pid) {
   $dryRun = drush_get_option('dryRun', FALSE);
   $verbose = drush_get_option('verbose', FALSE);
 
-  if ($verbose) { echo(__FUNCTION__." processing object '$pid'."); }
+  // if ($verbose) { echo(__FUNCTION__." processing object '$pid'."); }
   $count = 0;
 
   foreach ($object as $key => $datastream) {
@@ -2712,10 +2805,13 @@ function idu_drush_fix_RemoveDatastreams($pid) {
     }
   }
 
-  if ($verbose && $dryRun) {
-    echo("  $count datastreams found.\n");
-  } else if ($verbose && !$dryRun) {
-    echo("  $count datastreams removed.\n");
+  if ($count > 0 && $verbose) {
+    if ($dryRun) {
+      echo("  $count datastreams found in '$pid'.\n");
+    }
+    else {
+      echo("  $count datastreams removed form '$pid'.\n");
+    }
   }
 
   return $count;
@@ -2792,6 +2888,75 @@ function idu_drush_fix_RemoveDuplicateElements($pid) {
   if ($count > 0 && !$dryRun) {
     $ds->setContentFromString($xml->saveXML());
     $object->ingestDatastream($ds);
+  }
+
+  return $count;
+}
+
+/**
+ * Drush idu_fix_* function to remove empty cue elements from a specified
+ * object's MODS datastream.
+ *
+ * Invoke this function with an iduF process using a command of the form:
+ *   drush iduF <pids> RemoveEmptyCues
+ *
+ * @param string $pid
+ *   The PID (from the list of first-to-last) to operate on.
+ * @return int
+ *   The number of empty elements removed, or zero if none.
+ */
+function idu_drush_fix_RemoveEmptyCues($pid) {
+  module_load_include('inc', 'icu', 'icu_drush');
+
+  // For any exception, report and skip this PID
+  if (!$object = _idu_Repository()->getObject($pid)) {
+    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    return 0;
+  }
+
+  // Fetch options.
+  $dsid = drush_get_option('dsid', 'TRANSCRIPT');
+  $dryRun = drush_get_option('dryRun', FALSE);
+
+  // Check that this is an Oral History object.
+  $isOH = FALSE;
+
+  $models = $object->relationships->get(FEDORA_MODEL_URI, 'hasModel');
+  foreach ($models as $model) {
+    $CModel = $model['object']['value'];
+    if ($CModel === 'islandora:oralhistoriesCModel') {
+      $isOH = TRUE;
+    };
+  }
+  if (!$isOH) { return 0; }
+
+  $total = $cnt = $count = 0;
+  $label = $object->label;
+
+  // Open the TRANSCRIPT datastream and remove any empty cues.
+  $ds = $object[$dsid];
+  if ($content = $ds->content) {
+    $xml = new DOMDocument;
+    $xml->loadXML($content);
+    $dx = new DOMXPath($xml);
+    $parents = $dx->query('/cues');
+    foreach ($parents as $parent) {
+      $cues = $dx->query('/cues/cue');
+      foreach ($cues as $cue) {
+        $isEmpty = $cue->childNodes->length === 0;
+        if ($isEmpty) {
+          $cue->parentNode->removeChild($cue);
+          $content = $xml->saveXML();
+          $count += 1;
+        }
+      }
+    }
+  }
+
+  if ($count > 0 && !$dryRun) {
+    $ds->setContentFromString($xml->saveXML());
+    $object->ingestDatastream($ds);
+    $status = idu_drush_update_solr_index($pid);
   }
 
   return $count;
@@ -3031,6 +3196,193 @@ function idu_drush_fix_SelfTransform($pid) {
 }
 
 /**
+ * Drush idu_fix_* function Special... the purpose of this command is subject to change!  It is based
+ * on ChangeText.
+ *
+ * Invoke this function via iduF and the 'Special' operation parameter.  Something like this...
+ *
+ *   drush iduF grinnell:501 Special --dsid=MODS --xpath="/mods/description/identifier[@type='uri']
+ *
+ * Applicable options include the following:
+ *
+ *   --dsid=<string>  This option specifies the ID of the datastream to be operated on in each object.
+ *
+ *   --xpath=<string>  This option, if present, specifies an xpath used to query the target datastream.  If specified,
+ *       find => replace operations are restricted to the value returned by the xpath, so only the text() value of
+ *       the xpath can be changed.  If --xpath is omitted it defaults to NULL and this specifies that the entire
+ *       datastream be treated as a string and find => replace then operates on it as a string.  You can effectively
+ *       alter the ‘structure’ of a datastream in this mode so BE VERY CAREFUL!
+ *
+ * @param string $pid
+ *   The PID to operate on.
+ * @param array $options
+ *   An array of options.  In this case $options['findReplace'] should carry an associative array
+ *   with one or more find => replace pairs.
+ * @return int
+ *   The number of repair operations performed, or zero if none.
+ */
+function idu_drush_fix_Special($pid, $options) {
+
+  // For any exception, report and skip this PID
+  if (!$object = _idu_Repository()->getObject($pid)) {
+    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    return 0;
+  }
+
+  // Check for other options...
+  // $xpath = drush_get_option('xpath', NULL);    // ignored
+  $dryRun = drush_get_option('dryRun', FALSE);
+
+  $total = $cnt = $count = 0;
+  $label = $object->label;
+
+  // The code below was used on 14-August-2017 to remove empty TRANSCRIPT cues.
+
+  // Open the TRANSCRIPT datastream and remove any empty cues.
+  $dsid = drush_get_option('dsid', 'TRANSCRIPT');
+  $ds = $object[$dsid];
+  if ($content = $ds->content) {
+    $xml = new DOMDocument;
+    $xml->loadXML($content);
+    $dx = new DOMXPath($xml);
+    $parents = $dx->query('/cues');
+    foreach ($parents as $parent) {
+      $cues = $dx->query('/cues/cue');
+      foreach ($cues as $cue) {
+        $isEmpty = $cue->childNodes->length === 0;
+        if ($isEmpty) {
+          $cue->parentNode->removeChild($cue);
+          $content = $xml->saveXML();
+          $count += 1;
+        }
+      }
+    }
+  }
+
+  return $count;
+
+    // The code below was used on 14-August-2017 to clean up several object issues.
+  $dsid = drush_get_option('dsid', 'MODS');
+  $ds = $object[$dsid];
+  if ($content = $ds->content) {
+
+    // Replace label "Oral History Project: " with nothing!
+    $from = "Oral History Project: ";
+    $to = '';
+    if (stripos("_$label", $from)) {
+      $label = str_replace($from, $to, $label, $cnt);
+      $count += $cnt;
+      $label = ltrim($label, "_");
+      if (!$dryRun) {
+        $object->label = $label;
+      }
+    }
+
+    // Fetch the first class year from the label
+    if (preg_match('/\'(\d\d)/', $label, $matches)) {
+      $classYear = (int) $matches[1];
+      if ($classYear < 17) {
+        $class = 2000 + $classYear;
+      }
+      else {
+        $class = 1900 + $classYear;
+      }
+    }
+
+    // Remove "Oral History Project: "
+    if ($content = $ds->content) {
+      if (stripos($content, $from)) {
+        $content = str_replace($from, $to, $content, $cnt);
+        $count += $cnt;
+        if (!$dryRun) {
+          $object[$dsid]->setContentFromString($content);
+        }
+      }
+
+      $xml = new DOMDocument;
+      $xml->loadXML($content);
+      $dx = new DOMXPath($xml);
+
+      $extensions = $dx->query('/mods:mods/mods:extension');
+      foreach ($extensions as $extension) {
+
+        // Remove any /mods/extension/dg_creators from AOH
+        $creators = $dx->query('/mods:mods/mods:extension/mods:dg_creators');
+        foreach ($creators as $creator) {
+          $value = $creator->nodeValue;
+          $creator->parentNode->removeChild($creator);
+          $content = $xml->saveXML();
+          $count += 1;
+        }
+
+        // Remove any /mods/extension/creators from AOH
+        $creators = $dx->query('/mods:mods/mods:extension/mods:creators');
+        foreach ($creators as $creator) {
+          $value = $creator->nodeValue;
+          $creator->parentNode->removeChild($creator);
+          $content = $xml->saveXML();
+          $count += 1;
+        }
+
+        $new = $xml->createElement("hidden_creators", $value);
+        $extension->appendChild($new);
+        $content = $xml->saveXML();
+      }
+
+      // Look for /mods/originInfo/dateOther[@displayLabel="Date of Interview"]
+      $other = $dx->query('/mods:mods/mods:originInfo/mods:dateOther');
+      // None found... move dateCreated to dateOther[@displayLabel="Date of Interview"] and make dateCreated = class year
+      if ($other->length == 0) {
+        $created = $dx->query('/mods:mods/mods:originInfo/mods:dateCreated');
+        foreach ($created as $node) {
+          $interviewDate = (string) $node->nodeValue;
+        }
+
+        $parents = $dx->query('/mods:mods/mods:originInfo');
+        foreach ($parents as $parent) {
+          $new = $xml->createElement("dateOther", $interviewDate);
+          $dl = $xml->createAttribute("displayLabel");
+          $dl->value = "Date of Interview";
+          $new->appendChild($dl);
+          $parent->appendChild($new);
+          $content = $xml->saveXML();
+          $count += 1;
+        }
+      }
+
+      $created = $dx->query('/mods:mods/mods:originInfo/mods:dateCreated');
+      foreach ($created as $node) {
+        $node->nodeValue = $class;
+        $content = $xml->saveXML();
+        $count += 1;
+      }
+
+      if (!$dryRun) {
+        $object[$dsid]->setContentFromString($content);
+        idu_drush_update_solr_index($pid);
+      }
+
+    }
+
+    if ($count > 0) {
+      $msg = "iduFix - Special: $count changes.";
+      if ($dryRun) {
+        idu_drush_log($msg . " NO changes committed for object $pid due to the --dryRun option.", 'status');
+        idu_drush_post_to_file($msg . " NO changes committed for object $pid due to the --dryRun option.", NULL, 'public://iduFix_progress.log');
+      }
+      else {
+        $total += $count;
+        idu_drush_post_to_file("iduFix - Special: $count changes committed for object $pid.", NULL, 'public://iduFix_progress.log');
+      }
+    }
+  }
+
+  return $total;
+
+}
+
+
+/**
  * Drush idu_fix_* function to add a specific thumbnail image datastream to
  * an existing object.
  *
@@ -3226,6 +3578,7 @@ function idu_drush_fix_UpdateDC($pid) {
   define('COLLECTION_MODS', "<mods xmlns='http://www.loc.gov/mods/v3' xmlns:mods='http://www.loc.gov/mods/v3' xmlns:xlink='http://www.w3.org/1999/xlink' xmlns:xsi='http://www.w3.org/2001/XMLSchema-instance'><titleInfo><title>xxx</title></titleInfo><extension><primarySort>99</primarySort></extension></mods>");
 
   $dryRun = drush_get_option('dryRun', FALSE);
+  $hidden = drush_get_option('hidden', FALSE);
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
@@ -3403,20 +3756,26 @@ function idu_drush_fix_UpdateDC($pid) {
 
   $parents = $mx->query("/mods:mods/mods:extension");
 
+  if ($hidden) {
+    $name = 'hidden_creators';
+  } else {
+    $name = 'creators';
+  }
+
   foreach ($parents as $parent) {         // There should be only ONE!
-    $target = $mx->query("/mods:mods/mods:extension/mods:creators");
+    $target = $mx->query("/mods:mods/mods:extension/mods:$name");
     $creators = idu_build_creators_element($object);
 
     // No /creators...create one.
     if ($target->length === 0) {
-      $new = $xml->createElement("creators", $creators);
+      $new = $xml->createElement($name, $creators);
       $parent->appendChild($new);
       $content = $xml->saveXML();
       $total += 1;
       if (!$dryRun) {
         $object['MODS']->setContentFromString($content);
       } else {
-        idu_drush_log(__FUNCTION__." $pid now has a mods:creators value of '$creators'.", 'info');
+        idu_drush_log(__FUNCTION__." $pid now has a $name value of '$creators'.", 'info');
       }
       break;
     } else {        // We already have a /creators... make sure it is up-to-date
@@ -3428,7 +3787,7 @@ function idu_drush_fix_UpdateDC($pid) {
           if (!$dryRun) {
             $object['MODS']->setContentFromString($content);
           } else {
-            idu_drush_log(__FUNCTION__." $pid modified mods:creators value to 'Unknown'.", 'info');
+            idu_drush_log(__FUNCTION__." $pid modified $name value to 'Unknown'.", 'info');
           }
         } else if ($t->nodeValue != $creators) {
           $t->nodeValue = $creators;
@@ -3437,7 +3796,7 @@ function idu_drush_fix_UpdateDC($pid) {
           if (!$dryRun) {
             $object['MODS']->setContentFromString($content);
           } else {
-            idu_drush_log(__FUNCTION__." $pid modified mods:creators value is '$creators'.", 'info');
+            idu_drush_log(__FUNCTION__." $pid modified $name value is '$creators'.", 'info');
           }
         }
       }
@@ -3530,6 +3889,9 @@ function idu_drush_fix_UpdateDC($pid) {
       }
     }
   }
+
+  // Re-index this object in Solr.
+  if (!$dryRun && $total > 0) { idu_drush_update_solr_index($pid); }
 
   return $total;
 }
