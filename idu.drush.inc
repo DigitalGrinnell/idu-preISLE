@@ -215,7 +215,7 @@ function idu_drush_command( ) {
           object.  Use the --dryRun option to report duplicates only.
 
       RemoveEmptyCues -
-        Removes empty cue elements from the --dsid (default is MODS) datastream 
+        Removes empty cue elements from the --dsid (default is TRANSCRIPT) datastream 
           of an existing oral history object.  Use the --dryRun option to 
           report only.
 
@@ -355,11 +355,12 @@ function idu_drush_command( ) {
   $items['iduSpecial'] = array(
     'description' => t("Attempts to apply the specified 'Special' operation to a single, existing PID."),
     'arguments'   => array(
-      'pidAlpha'  => t('The primary PID to be processed.  Example: grinnell:52.'),
-      'operation' => t('Completes the name of the idu_drush_special_OPERATION function to be called. Available operations are: PrintRI, SingleCompound, FixArtist and FixStatus.'),
+      'pidAlpha'  => t('The primary PIDs to be processed.  Example: grinnell:52-100.'),
+      'operation' => t('Completes the name of the idu_drush_special_OPERATION function to be called. Available operations are: PrintRI, SingleCompound, FixArtist, FixPrimarySort, FixStatus and GenerateCoversheets.'),
     ),
     'options'     => array(
       'secondary' => t('An optional secondary PID to be used in the process.  Defaults to NULL.'),
+      'dryRun'    => t("If set, this option instructs the operation to identify and count changes, but not commit then.\n"),
     ),
     'examples' => array(
       'Example' => "drush iduS grinnell:622 SingleCompound",
@@ -4072,6 +4073,131 @@ function idu_drush_special_FixObjectTitle($pid) {
   }
 
   return;
+}
+
+/**
+ * Drush idu_special_* function to fix object /mods/extension/primarySort values.
+ *
+ * Invoke this function via iduS and the 'FixPrimarySort' operation parameter.
+ * Something like this...
+ *   drush iduS faulconer-art:1-501 FixPrimarySort
+ *
+ * This function sets all pertinent objects to have a primarySort value of '99',
+ * the intended default.  This function works on namespace:numeric object PIDS only.  It will
+ * not touch collections or sub-collections with a namespace:non-numeric PID.
+ *
+ * @param int $pid
+ *   The PID number(s) of the object(s) to operate on.
+ * @return int
+ *   The number of successful operations performed, or zero if none.
+ */
+function idu_drush_special_FixPrimarySort($pid) {
+  static $mods_ns = 'mods';
+  static $mods_nsU = 'http://www.loc.gov/mods/v3';
+
+  $sort = "/mods:mods/mods:extension/mods:primarySort";
+  $total = $count = 0;
+
+  list($ns, $pidRange) = explode(':', $pid);
+  list($p1, $p2) = explode("-", $pidRange);
+  if (!$p2) {
+    $p2 = $p1;
+  }
+
+  $range = $p2 - $p1 + 1;
+
+  idu_drush_print_progress("FixPrimarySort" );
+  $dryRun = drush_get_option('dryRun', FALSE);
+
+  for ($i = $p1, $n = 0; $i <= $p2; $i++, $n++) {
+    idu_drush_print_progress("FixPrimarySort", $n, $range );
+    $count = 0;
+    $pid = "$ns:$i";
+
+    // For any exception, report and skip this PID
+    try {
+      $object = _idu_Repository()->getObject($pid);
+    } catch (Exception $e) {
+      // idu_drush_log(__FUNCTION__ . " ($pid) returned NO object!", 'warning');
+      continue;
+    }
+
+    if ($ds = $object['MODS']) {
+      $xml = new DOMDocument;
+      $xml->loadXML($ds->content);
+      $mx = new DOMXPath($xml);
+      $mx->registerNamespace($mods_ns, $mods_nsU);
+      $results = $mx->query($sort);
+      if ($results->length > 0) {
+        foreach ($results as $node) {
+          $count++;
+          $old = $node->nodeValue;
+          $node->nodeValue = '99';
+          $content = $xml->saveXML();
+          idu_drush_log(__FUNCTION__ . " $pid primarySort of $old has been updated!", 'info');
+          break;
+        }
+      }
+
+      if ($count > 0) {
+        $total += $count;
+        if (!$dryRun) { $object['MODS']->setContentFromString($content); }
+      } else {
+        idu_drush_log(__FUNCTION__ . " $pid has NO primarySort element!", 'warning');
+      }
+    }
+  }
+
+  return $total;
+}
+
+/**
+ * Drush idu_special_* function to generate COVERSHEET datastreams.
+ *
+ * Invoke this function via iduS and the 'GenerateCoversheets' operation parameter.
+ * Something like this...
+ *   drush iduS faulconer-art:1-501 GenerateCoversheets
+ *
+ * This function works on namespace:numeric object PIDS only.  It will
+ * not touch collections or sub-collections with a namespace:non-numeric PID.
+ *
+ * @param int $pid
+ *   The PID number(s) of the object(s) to operate on.
+ * @return int
+ *   The number of successful operations performed, or zero if none.
+ */
+function idu_drush_special_GenerateCoversheets($pid) {
+  $total = 0;
+
+  list($ns, $pidRange) = explode(':', $pid);
+  list($p1, $p2) = explode("-", $pidRange);
+  if (!$p2) {
+    $p2 = $p1;
+  }
+
+  $range = $p2 - $p1 + 1;
+
+  idu_drush_print_progress("GenerateCoversheets" );
+  $dryRun = drush_get_option('dryRun', FALSE);
+
+  for ($i = $p1, $n = 0; $i <= $p2; $i++, $n++) {
+    idu_drush_print_progress("GenerateCoversheets", $n, $range);
+    $pid = "$ns:$i";
+
+    // For any exception, report and skip this PID
+    try {
+      $object = _idu_Repository()->getObject($pid);
+    } catch (Exception $e) {
+      // idu_drush_log(__FUNCTION__ . " ($pid) returned NO object!", 'warning');
+      continue;
+    }
+
+    if (!$dryRun) {
+      $total += dg7_controls_printable_cover_sheet($pid, NULL, TRUE);
+    }
+  }
+
+  return $total;
 }
 
 /**
