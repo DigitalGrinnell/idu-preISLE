@@ -3030,7 +3030,12 @@ function idu_drush_fix_RemoveEmptyCues($pid) {
 
   if ($count > 0 && !$dryRun) {
     $ds->setContentFromString($xml->saveXML());
-    $object->ingestDatastream($ds);
+
+    try {
+      $object->ingestDatastream($ds);
+    } catch (Exception $e) {
+      echo 'Caught exception: ', $e->getMessage(), "\n";
+    }
     $status = idu_drush_update_solr_index($pid);
   }
 
