@@ -118,6 +118,10 @@ function idu_drush_command( ) {
         Corrects collection assignments including removal of duplicate 
           collection relationships, and removal of --retire collection 
           references IF other relationships exist.
+          
+      CreateIslandoraBags -
+        Initiates one or more 'drush --user=1 create-islandora-bag object PID'
+          commands to generate Bagit containers of object datastreams.
 
       DateCreatedFix -
         Looks for invalid date strings in /mods/originInfo/dateCreated
@@ -134,6 +138,12 @@ function idu_drush_command( ) {
         Attempts to identify objects that are NOT indexed in Solr.  The
           --force and --repeat options are implied with a default --repeat
           value of 1000.
+          
+      HarvestOCR -
+        Looks for OCR or FULL_TEXT datastreams in the target objects and, 
+          if found, it writes the datastream text content to a file named 
+          [namespace]_[pidn].[ds].txt in 
+          //STORAGE/LIBRARY/LIBSTU/DG_OCR_Files/Pending_Review/.
         
       ImportCSV -
         Reads data, one line at at time, from the named --csv CSV data file
@@ -668,7 +678,7 @@ function drush_idu_iduFix($pspec, $fix) {
   }
 
   // If this is the List command, close the .csv file in /tmp.
-  if ($list) { fclose($list); }
+  if (isset($list)) { fclose($list); }
 
 }
 
@@ -1622,6 +1632,42 @@ function idu_drush_fix_ConvertTIFtoJP2($pid, $preOpts=NULL) {
 }
 
 /**
+ * Drush idu_fix_* function to generate a Bagit container filled with an
+ * object's datastreams.
+ *
+ * Invoke this function with an iduF process using a command of the form:
+ *   drush iduF $pids CreateIslandoraBags
+ *
+ * Applicable options are:
+ *   None
+ *
+ * @param string $pid
+ *   The PID (from the list of first-to-last) to operate on.
+ * @return int
+ *   The number of repair operations performed, or zero if none.
+ */
+function idu_drush_fix_CreateIslandoraBags($pid) {
+
+  if (!module_exists('islandora_bagit')) {
+    idu_drush_log(__FUNCTION__ . "You do not have Islandora_Bagit installed and enabled!", 'error');
+    return 0;
+  }
+
+  // For any exception, report and skip this PID
+  if (!$object = _idu_Repository()->getObject($pid)) {
+    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    return 0;
+  }
+
+  $result = drush_islandora_bagit_create_islandora_bag('object', $pid);
+  if ($result) {
+    return 0;
+  } else {
+    return 1;
+  }
+}
+
+/**
  * Drush idu_fix_* function to report and fix (when --dryRun is not set)
  *   invalid /mods/originInfo/dateCreated values.
  *
@@ -1947,6 +1993,35 @@ function idu_drush_fix_Discover($pid, $allPIDs) {
   fputcsv($list, array($pid));
 
   return 1;
+}
+
+/**
+ * Drush idu_fix_* function to harvest OCR and FULL_TEXT content to a file.
+ *
+ * Invoke this function with an iduF process using a command of the form:
+ *   drush iduF <pids> HarvestOCR
+ *
+ * There are no extra options.
+ *
+ * @param string $pid
+ *   The PID (from the list of first-to-last) to operate on.
+ * @return int
+ *   The number of harvested datastreams, or zero if none.
+ */
+function idu_drush_fix_HarvestOCR($pid) {
+
+  try {
+    $object = idu_repo( )->getObject($pid);
+  } catch (Exception $e) {
+    return 0;
+  }
+
+  if (dg7_controls_view_OCR($pid, NULL)) {
+    return 1;
+  } else {
+    return 0;
+  }
+
 }
 
 /**
@@ -2600,17 +2675,16 @@ function idu_drush_fix_PurgeDSVersions($pid) {
   // Call the Tuque functions to loop on versions and remove them from the bottom up.
   $count = $ds->count();
   while ($count-- > 5) {
-  //  if ($ds->offsetExists($count)) {
-      try {
-        if ($verbose) { idu_drush_log(__FUNCTION__." - Purging $dsid version $count for $pid.", 'status'); }
-        $ds->offsetUnset($count);
-        $return++;
-      } catch (Exception $e) {
-        echo 'Caught exception: ', $e->getMessage(), "\n";
-      }
-  //  }
+    if ($verbose) { idu_drush_log(__FUNCTION__." - Purging $dsid version $count for $pid.", 'status'); }
+    try {
+      $ds->offsetUnset($count);
+    } catch (Exception $e) {
+      echo 'Caught exception: ', $e->getMessage(), "\n";
+      return $return;
+    }
   }
 
+  $return++;
   $remain = $count + 1;
   idu_drush_log(__FUNCTION__." - Purge of $dsid versions for $pid is complete.  $remain versions remain.", 'status');
   return $return;
