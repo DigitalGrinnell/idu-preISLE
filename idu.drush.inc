@@ -857,7 +857,7 @@ function idu_drush_fix_AddDatastream($pid) {
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
-    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__." $pid returned NO object!", 'error');
     return 0;
   }
 
@@ -865,6 +865,12 @@ function idu_drush_fix_AddDatastream($pid) {
   $dsid = drush_get_option('dsid', 'WF');
   $title = drush_get_option('title', 'Islandora Webforms List');
   $contents = drush_get_option('contents', ' 1934660 ');
+
+  // Check first to see if the $dsid datastream already exists.  If yes, issue warning and move on.
+  if (isset($object[$dsid])) {
+    idu_drush_log( __FUNCTION__." $pid already has a $dsid datastream.  Nothing to do here. ", 'info');
+    return 0;
+  }
 
   // Make the new datastream copy.  Assume it is text/plain and Managed.
   $newDS = idu_copy_datastream($object, NULL, 'text/plain', 'M', $dsid, $title, $contents);
