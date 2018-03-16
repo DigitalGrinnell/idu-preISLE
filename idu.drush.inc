@@ -3638,7 +3638,7 @@ function idu_drush_fix_toPHPP($pid, $options) {
  * /mods/extension/primarySort.
  *
  * Note that primarySort is built from the object's CModel such that 'collection'
- * CModel objects get a primarySort=0 while all others get primarySort=1.  This
+ * CModel objects get a primarySort=0 while all others get primarySort=99.  This
  * data (in the form of Solr field dg_primarySort_s) is subsequently used as
  * the primary sort field in all collection views.  Since collection objects do not
  * have an initial MODS record, this script adds a very simple one to the object.
@@ -3813,7 +3813,7 @@ function idu_drush_fix_UpdateDC($pid) {
     $target = $mx->query("/mods:mods/mods:extension/mods:primarySort");
 
     if ($target->length === 0) {
-      $val = ($collection ? 0 : 1);
+      $val = ($collection ? 0 : 99);
       $new = $xml->createElement("primarySort", $val);
       $parent->appendChild($new);
       $content = $xml->saveXML();
