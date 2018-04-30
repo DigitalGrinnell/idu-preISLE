@@ -113,7 +113,7 @@ function idu_drush_command( ) {
 
       CopyDatastream -
         Copies the named --dsid datastream from a specified --parent object
-          to the target object.  [@TODO: Function is Mising!  27-Apr-2018]
+          to the target object.  [@TODO: Untested 30-Apr-2018]
           
       CorrectCollections -
         Corrects collection assignments including removal of duplicate 
@@ -290,7 +290,8 @@ function idu_drush_command( ) {
       'retire'    => t("Specifies one collection that target objects are to be removed from when using the CorrectCollections command.\n"),
       'self'      => t("Specifies the path to the self-transform XSL file to be applied. Defaults to public://cleanup_mods_and_reorder.xsl.\n"),
       'sibling'   => t("Specifies the PID of one existing child object in need of a sibling.\n"),
-      'source'    => t("Specifies the DC field from which /mods/extension/creators is to be constructed.  Default is 'dc:creator'.\n"),
+      'source'    => t("Specifies the DC field from which /mods/extension/creators is to be constructed OR,
+         in the case of CopyDatastream the PID of the source object.  Default is 'dc:creator'.\n"),
       'substitutionsFile' => t("In place of 'find' and 'replace', this option specifies the path to a 'csv' style file from which 'find, replace' pairs will be read.\n"),
       'title'     => t("Specifies a datastream title (label) or XML element value when needed. Default varies by use.\n"),
       'verbose'   => t("Triggers verbose output in certain commands.\n"),
@@ -1351,6 +1352,56 @@ function idu_drush_fix_CModelToMODS($pid) {
 
   return $total;
 }
+
+/**
+ * Drush idu_fix_* function to copy a specified datastream form one object to another.
+ *
+ * Invoke this function with an iduF process using a command of the form:
+ *   drush iduF $pids CopyDataStream --dsid=existingDSID --source=fromObjectPID
+ *
+ * Reqiured options are:
+ *   --dsid=The existing datastream ID such as 'MODS', 'MADS' or 'DC'.  Defaults to 'POLICY'.
+ *   --source=The PID of the obejct to fetch dsid from.  Defaults to NULL.
+ *
+ * @param string $pid
+ *   The PID (from the list of first-to-last) to operate on.
+ * @return int
+ *   The number of repair operations performed, or zero if none.
+ */
+function idu_drush_fix_CopyDatastream($pid) {
+
+  // Check that that --source exists
+  $source = drush_get_option('source', NULL);
+  if (!$object = _idu_Repository()->getObject($source)) {
+    drush_log(__FUNCTION__." Source object $source could NOT be opened!", 'error');
+    return 0;
+  }
+
+  // Check that the specified datastream exists... if not, we're done.
+  $dsid = drush_get_option('dsid', 'POLICY');
+  if (!$ds = $object[$dsid]) {
+    drush_log(__FUNCTION__." Source object $source has NO $dsid datastream!", 'error');
+    return 0;
+  }
+
+  // Make the new datastream copy.
+  $newDS = idu_copy_datastream($object, $dsid);
+
+  // For any exception, report and skip this PID
+  if (!$object = _idu_Repository()->getObject($pid)) {
+    drush_log(__FUNCTION__." $pid returned NO object!", 'error');
+    return 0;
+  }
+
+  // Attach the new datastream
+  $object->ingestDatastream($newDS);
+
+  // Re-index this object in Solr.
+  idu_drush_update_solr_index($pid);
+
+  return 1;
+}
+
 
 /**
  * Drush idu_fix_* function to correct collection assignments.
