@@ -42,6 +42,7 @@ function idu_drush_command( ) {
       SelfTransform -
         Applies the specified --self self-transform to the specified
           --dsid datastream.  Use --reorder to also reorder MODS.
+          [Verified 27-Apr-2018]
 
       UpdateDC -
         Ensures that specified objects have NO empty or missing
@@ -112,7 +113,7 @@ function idu_drush_command( ) {
 
       CopyDatastream -
         Copies the named --dsid datastream from a specified --parent object
-          to the target object.  
+          to the target object.  [@TODO: Function is Mising!  27-Apr-2018]
           
       CorrectCollections -
         Corrects collection assignments including removal of duplicate 
@@ -206,7 +207,7 @@ function idu_drush_command( ) {
 
       PurgeElements -
         Removes all --xpath matched elements from the specified --dsid      
-          datastream.
+          datastream. [Verified 27-Apr-2018]
 
       PurgeFamily -
         Delete an object and all of its constituents!
@@ -259,7 +260,7 @@ function idu_drush_command( ) {
           to grinnell:phpp."),
 
     'options' => array(
-      'collection'   => t("Specifies the target collection (should include wildcards like '*test*') from which objects will be selected for processing.\n"),
+      'collection'   => t("Specifies the target collection (should use a wildcard and no colon, like '*test' in lieu of ':test') from which objects will be selected for processing.\n"),
       'contentType'  => t("Specifies the content model (type...should include wildcards like '*image*') of object(s) to be selected for processing.\n"),
       'createdAfter' => t("If set with a YYYY-mm-ddTHH:ii:ssZ timestamp string, then only objects created after said local time are considered. Default is 2000-01-01T00:00:00Z.\n"),
       'modAfter'     => t("If set with a YYYY-mm-ddTHH:ii:ssZ timestamp string, then only objects modified after said local time are considered. Default is 2000-01-01T00:00:00Z.\n"),
@@ -2722,16 +2723,34 @@ function idu_drush_fix_PurgeElements($pid) {
     return 0;
   }
 
-  // Open the --dsid datastream...
+  // Fetch options...
 
-  if (!$dsid = drush_get_option('dsid',FALSE)) { return 0; }
-  if (!$dc = $object[$dsid]) { return 0; }
-  if (!$xpath = drush_get_option('xpath',FALSE)) { return 0; }
+  if (!$dsid = drush_get_option('dsid', FALSE)) {
+    idu_drush_log(__FUNCTION__."($pid) The required --dsid clause is missing!", 'error');
+    return 0;
+  }
+
+  if (!$dc = $object[$dsid]) {
+    idu_drush_log(__FUNCTION__."($pid) The specified $dsid datastream does not exist!", 'warning');
+    return 0;
+  }
+
+  if (!$xpath = drush_get_option('xpath', FALSE)) {
+    idu_drush_log(__FUNCTION__."($pid) The required --xpath clause is missing!", 'error');
+    return 0;
+  }
+
+  $dryRun = drush_get_option('dryRun', FALSE);
+  $verbose = drush_get_option('verbose', FALSE);
+
   $total = 0;
+
+  // Open the --dsid datastream...
 
   $xml = new DOMDocument;
   $xml->loadXML($dc->content);
   $dx = new DOMXPath($xml);
+  if ($dsid === 'MODS') { $dx->registerNamespace('mods', 'http://www.loc.gov/mods/v3'); }
 
   // Find the target elements.
   $elements = $dx->query($xpath);
@@ -2740,6 +2759,7 @@ function idu_drush_fix_PurgeElements($pid) {
   // gets corrupted as bits are removed!
   $toRemove = array( );
   foreach ($elements as $element) {
+    if ($verbose) { drush_log("Removing element with nodeValue '$element->nodeValue' from object $pid.", 'status'); }
     $toRemove[ ] = $element;
   }
 
@@ -2750,7 +2770,7 @@ function idu_drush_fix_PurgeElements($pid) {
     $total += 1;
   }
 
-  $object[$dsid]->setContentFromString($content);
+  if (!$dryRun) $object[$dsid]->setContentFromString($content);
   return $total;
 }
 
@@ -3235,7 +3255,11 @@ function idu_drush_fix_SelfTransform($pid) {
 
   // Check that the specified datastream exists... if not, we're done.
   $dsid = drush_get_option('dsid', 'MODS');
-  if (!$ds = $object[$dsid]) { return 0; }
+
+  if (!$ds = $object[$dsid]) {
+    idu_drush_log(__FUNCTION__."($pid) The specified $dsid datastream does not exist!", 'warning');
+    return 0;
+; }
 
   // Get the specified self-transform.
   $xsl = new DOMDocument( );
