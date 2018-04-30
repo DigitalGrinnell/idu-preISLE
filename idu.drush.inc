@@ -196,7 +196,7 @@ function idu_drush_command( ) {
       Purge -
         Deletes the object.  If the --force option is set this command 
         will NOT use Solr to retrieve a list of objects. 
-        Be careful with this one!
+        Be careful with this one! [Verified 30-Apr-2018]
 
       PurgeDatastream -
         Deletes the --dsid datastream.  Be careful with this one too!
@@ -2605,9 +2605,6 @@ function idu_drush_fix_PermissionsRestore($pid, $options=NULL) {
  * Invoke this function with an iduF process using a command of the form:
  *   drush iduF <pid> Purge
  *
- * Note that if the health report indicates this object to have constituents, they will be marked
- * for subsequent removal in the pending_drush_commands.sh file.
- *
  * @param string $pid
  *   The PID to be purged.
  * @param array $options
@@ -2627,31 +2624,12 @@ function idu_drush_fix_Purge($pid, $options=NULL) {
     return 0;
   }
 
-  /* Get this object's health from the available CSV data.  Verify that we have the correct object.
-  if ($row = or_get($pid)) {
-    if ($row['B'] === $pid) {
-      list($nC, $constituents) = icu_get_count_and_content($row['H']);  // from the RI
-      if ($nC > 0) {
-        idu_drush_post_to_file("Purge existing children of object $pid.", NULL);
-        $parts = explode(',', $constituents);
-        foreach ($parts as $part) {
-          if (preg_match('/^(\d+)$/', $part)) {
-            idu_drush_post_to_file(NULL, "drush iduF $ns:$part Purge\n");
-          } else if (preg_match('/^(\d+)\-(\d+)$/', $part, $matches)) {
-            $num = intval($matches[2]) - intval($matches[1]);
-            idu_drush_post_to_file(NULL, "drush iduF $ns:$matches[1] Purge --repeat=$num\n");
-          }
-        }
-      }
-    }
-  } */
-
   $dryRun = drush_get_option('dryRun', FALSE);
 
   if (!$dryRun) {
     idu_repo( )->purgeObject($pid);
   } else {
-    idu_drush_log(__FUNCTION__ . "$pid was found but NOT purged due to use of --dryRun.", 'info');
+    idu_drush_log(__FUNCTION__ . " $pid was found but NOT purged due to use of --dryRun.", 'info');
   }
 
   return 1;
