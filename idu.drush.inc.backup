@@ -42,7 +42,6 @@ function idu_drush_command( ) {
       SelfTransform -
         Applies the specified --self self-transform to the specified
           --dsid datastream.  Use --reorder to also reorder MODS.
-          [Verified 27-Apr-2018]
 
       UpdateDC -
         Ensures that specified objects have NO empty or missing
@@ -113,7 +112,7 @@ function idu_drush_command( ) {
 
       CopyDatastream -
         Copies the named --dsid datastream from a specified --parent object
-          to the target object.  [Verified 2-May-2018]
+          to the target object.  
           
       CorrectCollections -
         Corrects collection assignments including removal of duplicate 
@@ -196,11 +195,10 @@ function idu_drush_command( ) {
       Purge -
         Deletes the object.  If the --force option is set this command 
         will NOT use Solr to retrieve a list of objects. 
-        Be careful with this one! [Verified 30-Apr-2018]
+        Be careful with this one!
 
       PurgeDatastream -
         Deletes the --dsid datastream.  Be careful with this one too!
-        [Verified 2-May-2018]
 
       PurgeDSVersions -
         Purges all but the current copy of an existing object's --dsid 
@@ -208,7 +206,7 @@ function idu_drush_command( ) {
 
       PurgeElements -
         Removes all --xpath matched elements from the specified --dsid      
-          datastream. [Verified 27-Apr-2018]
+          datastream.
 
       PurgeFamily -
         Delete an object and all of its constituents!
@@ -261,7 +259,7 @@ function idu_drush_command( ) {
           to grinnell:phpp."),
 
     'options' => array(
-      'collection'   => t("Specifies the target collection (should use a wildcard and no colon, like '*test' in lieu of ':test') from which objects will be selected for processing.\n"),
+      'collection'   => t("Specifies the target collection (should include wildcards like '*test*') from which objects will be selected for processing.\n"),
       'contentType'  => t("Specifies the content model (type...should include wildcards like '*image*') of object(s) to be selected for processing.\n"),
       'createdAfter' => t("If set with a YYYY-mm-ddTHH:ii:ssZ timestamp string, then only objects created after said local time are considered. Default is 2000-01-01T00:00:00Z.\n"),
       'modAfter'     => t("If set with a YYYY-mm-ddTHH:ii:ssZ timestamp string, then only objects modified after said local time are considered. Default is 2000-01-01T00:00:00Z.\n"),
@@ -291,8 +289,7 @@ function idu_drush_command( ) {
       'retire'    => t("Specifies one collection that target objects are to be removed from when using the CorrectCollections command.\n"),
       'self'      => t("Specifies the path to the self-transform XSL file to be applied. Defaults to public://cleanup_mods_and_reorder.xsl.\n"),
       'sibling'   => t("Specifies the PID of one existing child object in need of a sibling.\n"),
-      'source'    => t("Specifies the DC field from which /mods/extension/creators is to be constructed OR,
-         in the case of CopyDatastream the PID of the source object.  Default is 'dc:creator'.\n"),
+      'source'    => t("Specifies the DC field from which /mods/extension/creators is to be constructed.  Default is 'dc:creator'.\n"),
       'substitutionsFile' => t("In place of 'find' and 'replace', this option specifies the path to a 'csv' style file from which 'find, replace' pairs will be read.\n"),
       'title'     => t("Specifies a datastream title (label) or XML element value when needed. Default varies by use.\n"),
       'verbose'   => t("Triggers verbose output in certain commands.\n"),
@@ -1005,7 +1002,7 @@ function idu_drush_fix_ChangeCompound($pid) {
  * an existing object.
  *
  * Invoke this function with an iduF process using a command of the form:
- *   drush iduF $pids ChageDatastream --dsid=TRANSCRIPT --label=IOH-Transcript
+ *   drush iduF $pids ChangeDatastream --dsid=TRANSCRIPT --label=IOH-Transcript
  *
  * Applicable options are:
  *   --dsid=The datastream ID to be operated on.  Defaults to 'TRANSCRIPT'.
@@ -1354,59 +1351,63 @@ function idu_drush_fix_CModelToMODS($pid) {
   return $total;
 }
 
+
 /**
- * Drush idu_fix_* function to copy a specified datastream form one object to another.
+ * Drush idu_fix_* function to copy an existing datastream from one object to another.
  *
  * Invoke this function with an iduF process using a command of the form:
- *   drush iduF $pids CopyDataStream --dsid=existingDSID --source=fromObjectPID
+ *   drush iduF $pids CopyDatastream --dsid=POLICY --parent:grinnell:1234
  *
- * Reqiured options are:
- *   --dsid=The existing datastream ID such as 'MODS', 'MADS' or 'DC'.  Defaults to 'POLICY'.
- *   --source=The PID of the obejct to fetch dsid from.  Defaults to NULL.
+ * Applicable options are:
+ *   --dsid=The datastream ID to be copied.  Defaults to 'POLICY'.
+ *   --parent=The PID of the parent object to fetch dsid from.  Has no default.
  *
  * @param string $pid
  *   The PID (from the list of first-to-last) to operate on.
  * @return int
  *   The number of repair operations performed, or zero if none.
- */
+ *
 function idu_drush_fix_CopyDatastream($pid) {
-
-  $dryRun = drush_get_option('dryRun', FALSE);
-
-  // Check that that --source exists
-  $source = drush_get_option('source', NULL);
-  if (!$sObj = _idu_Repository()->getObject($source)) {
-    drush_log(__FUNCTION__." Source object $source could NOT be opened!", 'error');
-    return 0;
-  }
-
-  // Check that the specified datastream exists... if not, we're done.
-  $dsid = drush_get_option('dsid', 'POLICY');
-  if (!$ds = $sObj[$dsid]) {
-    drush_log(__FUNCTION__." Source object $source has NO $dsid datastream!", 'error');
-    return 0;
-  }
-
-  // Make the new datastream copy.
-  $newDS = idu_copy_datastream($sObj, $dsid);
 
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
-    drush_log(__FUNCTION__." $pid returned NO object!", 'error');
+    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
     return 0;
   }
 
-  // Attach the new datastream
-  if (!$dryRun) {
-    try {
-      $object->ingestDatastream($newDS);
-    } catch (Exception $e) {
-      echo 'Caught exception: ', $e->getMessage(), "\n";
-      return 0;
-    }
-    // Re-index this object in Solr.
-    idu_drush_update_solr_index($pid);
+  // Get options...
+  $dsid = drush_get_option('dsid', 'POLICY');
+  $parent = drush_get_option('parent', FALSE);
+
+  // Get existing datastream...
+  if (!$ds = $object[$dsid]) {
+    idu_drush_log(__FUNCTION__." ($pid) returned NO $dsid datastream!", 'warning');
+    return 0;
   }
+
+  $content = $ds->content;
+  $oldLabel = $ds->label;
+  $mime = $ds->mimeType;
+  $control = $ds->controlGroup;
+
+  if ($label) {
+    $newLabel = $label;
+  } else {
+    $newLabel = $oldLabel;
+  }
+
+  if ($id) {
+    $newDSID = $id;
+  } else {
+    $newDSID = $dsid;
+  }
+
+  // Delete the old datastream.
+  unset($object[$dsid]);
+
+  // Make the new datastream copy.  Give it the same mime type and controlGroup as before.
+  $newDS = idu_copy_datastream($object, NULL, $mime, $control, $newDSID, $newLabel, $content);
+  $object->ingestDatastream($newDS);
 
   return 1;
 }
@@ -2614,6 +2615,9 @@ function idu_drush_fix_PermissionsRestore($pid, $options=NULL) {
  * Invoke this function with an iduF process using a command of the form:
  *   drush iduF <pid> Purge
  *
+ * Note that if the health report indicates this object to have constituents, they will be marked
+ * for subsequent removal in the pending_drush_commands.sh file.
+ *
  * @param string $pid
  *   The PID to be purged.
  * @param array $options
@@ -2633,12 +2637,31 @@ function idu_drush_fix_Purge($pid, $options=NULL) {
     return 0;
   }
 
+  /* Get this object's health from the available CSV data.  Verify that we have the correct object.
+  if ($row = or_get($pid)) {
+    if ($row['B'] === $pid) {
+      list($nC, $constituents) = icu_get_count_and_content($row['H']);  // from the RI
+      if ($nC > 0) {
+        idu_drush_post_to_file("Purge existing children of object $pid.", NULL);
+        $parts = explode(',', $constituents);
+        foreach ($parts as $part) {
+          if (preg_match('/^(\d+)$/', $part)) {
+            idu_drush_post_to_file(NULL, "drush iduF $ns:$part Purge\n");
+          } else if (preg_match('/^(\d+)\-(\d+)$/', $part, $matches)) {
+            $num = intval($matches[2]) - intval($matches[1]);
+            idu_drush_post_to_file(NULL, "drush iduF $ns:$matches[1] Purge --repeat=$num\n");
+          }
+        }
+      }
+    }
+  } */
+
   $dryRun = drush_get_option('dryRun', FALSE);
 
   if (!$dryRun) {
     idu_repo( )->purgeObject($pid);
   } else {
-    idu_drush_log(__FUNCTION__ . " $pid was found but NOT purged due to use of --dryRun.", 'info');
+    idu_drush_log(__FUNCTION__ . "$pid was found but NOT purged due to use of --dryRun.", 'info');
   }
 
   return 1;
@@ -2660,8 +2683,6 @@ function idu_drush_fix_Purge($pid, $options=NULL) {
  */
 function idu_drush_fix_PurgeDatastream($pid) {
 
-  $dryRun = drush_get_option('dryRun', FALSE);
-
   // For any exception, report and skip this PID
   if (!$object = _idu_Repository()->getObject($pid)) {
     idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
@@ -2670,27 +2691,22 @@ function idu_drush_fix_PurgeDatastream($pid) {
 
   // Check that the specified datastream exists... if not, we're done.
   $dsid = drush_get_option('dsid', 'MODS');
-  if (!$ds = $object[$dsid]) {
-    idu_drush_log(__FUNCTION__."($pid) has no $dsid datastream.", 'warning');
-    return 0;
-  }
+  if (!$ds = $object[$dsid]) { return 0; }
 
   // Call the Fedora API to remove the datastream.
-  if (!$dryRun) {
-    $api_m = $object->repository->api->m;                       // For a Management API.
-    $params = array();
-    $result = $api_m->purgeDatastream($pid, $dsid, $params);
+  $api_m = $object->repository->api->m;                       // For a Management API.
+  $params = array( );
+  $result = $api_m->purgeDatastream($pid, $dsid, $params);
 
-    /* If this was an OBJ datastream... remove the TN, JPG and JP2 also!
-    if ($dsid === "OBJ") {
-      $result = $api_m->purgeDatastream($pid, 'JP2', $params);
-      $result = $api_m->purgeDatastream($pid, 'JPG', $params);
-      $result = $api_m->purgeDatastream($pid, 'TN', $params);
-    } */
-
-    // Re-index this object in Solr.
-    idu_drush_update_solr_index($pid);
+  // If this was an OBJ datastream... remove the TN, JPG and JP2 also!
+  if ($dsid === "OBJ") {
+    $result = $api_m->purgeDatastream($pid, 'JP2', $params);
+    $result = $api_m->purgeDatastream($pid, 'JPG', $params);
+    $result = $api_m->purgeDatastream($pid, 'TN', $params);
   }
+
+  // Re-index this object in Solr.
+  idu_drush_update_solr_index($pid);
 
   return 1;
 }
@@ -2768,34 +2784,16 @@ function idu_drush_fix_PurgeElements($pid) {
     return 0;
   }
 
-  // Fetch options...
-
-  if (!$dsid = drush_get_option('dsid', FALSE)) {
-    idu_drush_log(__FUNCTION__."($pid) The required --dsid clause is missing!", 'error');
-    return 0;
-  }
-
-  if (!$dc = $object[$dsid]) {
-    idu_drush_log(__FUNCTION__."($pid) The specified $dsid datastream does not exist!", 'warning');
-    return 0;
-  }
-
-  if (!$xpath = drush_get_option('xpath', FALSE)) {
-    idu_drush_log(__FUNCTION__."($pid) The required --xpath clause is missing!", 'error');
-    return 0;
-  }
-
-  $dryRun = drush_get_option('dryRun', FALSE);
-  $verbose = drush_get_option('verbose', FALSE);
-
-  $total = 0;
-
   // Open the --dsid datastream...
+
+  if (!$dsid = drush_get_option('dsid',FALSE)) { return 0; }
+  if (!$dc = $object[$dsid]) { return 0; }
+  if (!$xpath = drush_get_option('xpath',FALSE)) { return 0; }
+  $total = 0;
 
   $xml = new DOMDocument;
   $xml->loadXML($dc->content);
   $dx = new DOMXPath($xml);
-  if ($dsid === 'MODS') { $dx->registerNamespace('mods', 'http://www.loc.gov/mods/v3'); }
 
   // Find the target elements.
   $elements = $dx->query($xpath);
@@ -2804,7 +2802,6 @@ function idu_drush_fix_PurgeElements($pid) {
   // gets corrupted as bits are removed!
   $toRemove = array( );
   foreach ($elements as $element) {
-    if ($verbose) { drush_log("Removing element with nodeValue '$element->nodeValue' from object $pid.", 'status'); }
     $toRemove[ ] = $element;
   }
 
@@ -2815,7 +2812,7 @@ function idu_drush_fix_PurgeElements($pid) {
     $total += 1;
   }
 
-  if (!$dryRun) $object[$dsid]->setContentFromString($content);
+  $object[$dsid]->setContentFromString($content);
   return $total;
 }
 
@@ -3300,11 +3297,7 @@ function idu_drush_fix_SelfTransform($pid) {
 
   // Check that the specified datastream exists... if not, we're done.
   $dsid = drush_get_option('dsid', 'MODS');
-
-  if (!$ds = $object[$dsid]) {
-    idu_drush_log(__FUNCTION__."($pid) The specified $dsid datastream does not exist!", 'warning');
-    return 0;
-; }
+  if (!$ds = $object[$dsid]) { return 0; }
 
   // Get the specified self-transform.
   $xsl = new DOMDocument( );
