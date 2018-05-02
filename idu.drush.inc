@@ -113,7 +113,11 @@ function idu_drush_command( ) {
 
       CopyDatastream -
         Copies the named --dsid datastream from a specified --parent object
+<<<<<<< HEAD
           to the target object.  [Verified 2-May-2018]
+=======
+          to the target object.  [@TODO: Untested 30-Apr-2018]
+>>>>>>> baeed8f9355c0a20ad479e5f83d7f1307abbdeb4
           
       CorrectCollections -
         Corrects collection assignments including removal of duplicate 
