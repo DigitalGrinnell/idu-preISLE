@@ -274,6 +274,10 @@ function idu_handle_create_or_modify($object, $op='CREATE', $force=FALSE) {
   static $mods_nsU = 'http://www.loc.gov/mods/v3';
 
   $pid = $object->id;
+  $verbose = drush_get_option('verbose', False);
+  if ($verbose) {
+    idu_drush_log(__FUNCTION__." is processing object $pid.", 'status');
+  }
 
   // Specify the target batch and log files in temporary://.
   $fileName = 'temporary://'.H_BATCH;

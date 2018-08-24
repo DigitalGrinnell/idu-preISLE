@@ -113,11 +113,7 @@ function idu_drush_command( ) {
 
       CopyDatastream -
         Copies the named --dsid datastream from a specified --parent object
-<<<<<<< HEAD
           to the target object.  [Verified 2-May-2018]
-=======
-          to the target object.  [@TODO: Untested 30-Apr-2018]
->>>>>>> baeed8f9355c0a20ad479e5f83d7f1307abbdeb4
           
       CorrectCollections -
         Corrects collection assignments including removal of duplicate 
@@ -133,6 +129,14 @@ function idu_drush_command( ) {
           fields and attempts to fix them if the --dryRun option 
           is NOT set.  Note that --force defaults to TRUE for this command.
 
+      DateFieldFix -
+        Looks for invalid date strings in /mods/originInfo/date*
+          fields and if found, it removes the field and replaces it with
+          a corresponding /mods/note[@type='date'] field, value and, an
+          appropriate @displayLabel attribute too. Modified object MODS
+          are automatically reordered, self-transformed, and re-indexed 
+          in Solr.  [Verified 23-Aug-2018]
+          
       DCTransform -
         Applies the specified MODS-to-DC Transform to an object.
 
@@ -1833,6 +1837,120 @@ function idu_drush_fix_DateCreatedFix($pid) {
         }
       }
     }
+  }
+
+  return $count;
+}
+
+
+function is_date( $str ) {
+  try {
+    $dt = new DateTime( trim($str) );
+    return true;
+  }
+  catch( Exception $e ) {
+    return false;
+  }
+}
+
+
+/**
+ * Drush idu_fix_* function to find and remove (when --dryRun is not set)
+ *   invalid /mods/originInfo/date* values, replacing them with a new
+ *   /mods/note[@type='date'] field.
+ *
+ * Invoke this function with an iduF process using a command of the form:
+ *   drush iduF <pids> DateFieldFix
+ *
+ * @param string $pid
+ *   The PID (from the list of first-to-last) to operate on.
+ * @return int
+ *   The number of invalid date* values found (and fixed).
+ */
+function idu_drush_fix_DateFieldFix($pid) {
+  static $mods_ns = 'mods';
+  static $mods_nsU = 'http://www.loc.gov/mods/v3';
+
+  module_load_include('inc', 'icu', 'icu_drush');
+
+  // For any exception, report and skip this PID
+  try {
+    $object = idu_repo( )->getObject($pid);
+  } catch (Exception $e) {
+    return 0;  // for any exception...skip this PID
+  }
+
+  // Fetch options.
+  $dryRun = drush_get_option('dryRun', FALSE);
+
+  // Check for an existing MODS datastream... if none, we're done.
+  if (!$ds = $object['MODS']) { return 0; }
+
+  // Loop on all target date* fields...   dateIssued, dateCaptured, dateValid, dateModified, copyrightDate, and dateOther
+  // Note that dateCreated already gets special handling/meaning in DG so it is NOT included here.
+
+  $dateFields = array('dateIssued' => 'Date Issued', 'dateCaptured' => 'Date Captured', 'dateValid' => 'Date Valid',
+    'dateModified' => 'Date Modified', 'copyrightDate' => 'Copyright Date', 'dateOther' => 'Date (Other)');
+
+  // Fetch the target date field value from the object.
+  $xml = new DOMDocument;
+  $xml->loadXML($ds->content);
+  $mx = new DOMXPath($xml);
+  $mx->registerNamespace($mods_ns, $mods_nsU);
+  $count = 0;
+
+  foreach ($dateFields as $fieldName => $label) {
+
+    // Find the target element.
+    $expr = "/mods:mods/mods:originInfo/mods:$fieldName";
+    $target = $mx->query($expr);
+
+    foreach ($target as $key => $node) {
+      $dateVal = $node->nodeValue;
+
+      // If date value is not valid...
+      if (!is_date($dateVal)) {
+
+        // See if there is a displayLabel attribute.  If yes, use that value for the new note's attribute.
+        if ($node->hasAttribute("displayLabel")) {
+          $label = $node->getAttribute("displayLabel");
+        }
+
+        // Remove the old date* field.
+        $node->parentNode->removeChild($node);
+
+        // Create a new /mods/note[@type='date']
+        $element = $xml->createElement('note', $dateVal);
+        $attr = $xml->createAttribute('type');
+        $attr->value = 'date';
+        $element->appendChild($attr);
+        $attr = $xml->createAttribute('displayLabel');
+        $attr->value = $label;
+        $element->appendChild($attr);
+
+        // Append the new note element to /mods:mods
+        $parents = $mx->query("/mods:mods");
+        foreach ($parents as $parent) {
+          $parent->appendChild($element);
+        }
+
+        // Save the changes.
+        if (!$dryRun) {
+          $content = $xml->saveXML();
+          $object['MODS']->setContentFromString($content);
+          $count++;
+        }
+
+        echo "Object $pid MODS originInfo/$fieldName element value '$dateVal' does not appear to be a valid entry and it has been moved to a new Note field.\n";
+      }
+    }
+  }
+
+  // If changes were made trigger a reorder and self-transform of MODS, and a Solr re-indexing of the object.
+  if ($count > 0) {
+    drush_set_option('reorder', True);
+    idu_drush_fix_SelfTransform($pid);
+    idu_drush_fix_IndexSolr($pid);
   }
 
   return $count;
