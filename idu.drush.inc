@@ -182,6 +182,10 @@ function idu_drush_command( ) {
         Attempts to make the specified object a sibling of an existing
           --sibling PID.
 
+      MigrateObject -
+        Migrates an object from its --source collection to --replace.
+          [Verified 31-Aug-2018]
+
       MIMEFix -
         Changes errant object MIME types from --find to --replace.
 
@@ -1857,7 +1861,9 @@ function is_date( $str ) {
 /**
  * Drush idu_fix_* function to find and remove (when --dryRun is not set)
  *   invalid /mods/originInfo/date* values, replacing them with a new
- *   /mods/note[@type='date'] field.
+ *   /mods/note[@type='creation/production credits'] field.  This command also
+ *   finds any /mods/note[@type='date'] fields and changes them to
+ *   /mods/note[@type='creation/production credits']
  *
  * Invoke this function with an iduF process using a command of the form:
  *   drush iduF <pids> DateFieldFix
@@ -1919,10 +1925,10 @@ function idu_drush_fix_DateFieldFix($pid) {
         // Remove the old date* field.
         $node->parentNode->removeChild($node);
 
-        // Create a new /mods/note[@type='date']
+        // Create a new /mods/note[@type='creation/production credits']
         $element = $xml->createElement('note', $dateVal);
         $attr = $xml->createAttribute('type');
-        $attr->value = 'date';
+        $attr->value = 'creation/production credits';
         $element->appendChild($attr);
         $attr = $xml->createAttribute('displayLabel');
         $attr->value = $label;
@@ -1943,6 +1949,31 @@ function idu_drush_fix_DateFieldFix($pid) {
 
         echo "Object $pid MODS originInfo/$fieldName element value '$dateVal' does not appear to be a valid entry and it has been moved to a new Note field.\n";
       }
+    }
+  }
+
+  // Find any target note[@type='date'] elements and change them.
+  $expr = "/mods:mods/mods:note[@type='date']";
+  $target = $mx->query($expr);
+
+  foreach ($target as $key => $node) {
+    $dateVal = $node->nodeValue;
+
+    // If date value is not valid...
+    if (!is_date($dateVal)) {
+
+      // Change the @type attribute from 'date' to 'creation/production credits'.
+      $node->setAttribute("type", "creation/production credits");
+
+      // Save the changes.
+      if (!$dryRun) {
+        $content = $xml->saveXML();
+        $object['MODS']->setContentFromString($content);
+        $count++;
+      }
+
+      echo "Object $pid MODS note[@type='date'] element value '$dateVal' does not appear to be a valid entry and the type attribute has been changed to 'creation/production credits'.\n";
+
     }
   }
 
@@ -2599,6 +2630,56 @@ $ds->mimetype = 'application/rdf+xml';
 }
 
 return $count;
+}
+*/
+
+/**
+ * Drush idu_fix_* function to migrate (move) an object from one collection to another.
+ *
+ * Invoke this function via iduF and the 'MigrateObject' operation parameter.  Something like this...
+ *
+ *   drush iduF grinnell:4937 MigrateObject --source=grinnell:pending-review-suppressed --collection=grinnell:test
+ *
+ * @param string $pid
+ *   The PID to operate on.
+ * @param array $options
+ *   An array of passed options.
+ * @return int
+ *   The number of repair operations performed, or zero if none.
+ */
+function idu_drush_fix_MigrateObject($pid, $options) {
+
+  // For any exception, report and skip this PID
+  if (!$object = _idu_Repository()->getObject($pid)) {
+    idu_drush_log(__FUNCTION__."($pid) returned NO object!", 'error');
+    return 0;
+  }
+
+  if (!$source = drush_get_option('source', False)) {
+    idu_drush_log('This command requires a --source option!', 'error');
+    return 0;
+  }
+
+  if (!$dest = drush_get_option('replace', False)) {
+    idu_drush_log('This command requires a --replace (destination) option!', 'error');
+    return 0;
+  }
+
+  $dryRun = drush_get_option('dryRun', False);
+
+  if ($rels = $object->relationships->get(FEDORA_RELS_EXT_URI, 'isMemberOfCollection')) {
+    foreach ($rels as $rel) {
+      $r = $rel['object']['value'];
+      if ($r === $source && !$dryRun) {
+        $object->relationships->remove(FEDORA_RELS_EXT_URI, 'isMemberOfCollection');
+        $object->relationships->add(FEDORA_RELS_EXT_URI, 'isMemberOfCollection', $dest);
+        return 1;
+      } else {
+        idu_drush_log("Object '$pid', part of collection '$r' did NOT migrate due to conflict or --dryRun.", 'warning');
+      }
+    }
+  }
+  return 0;
 }
 
 /**
