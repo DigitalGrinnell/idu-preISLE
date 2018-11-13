@@ -28,7 +28,7 @@ function idu_drush_command( ) {
   $items['iduFix'] = array(
     'description' => t("Attempts to apply the specified 'fix' to one or more existing PIDs."),
     'arguments'   => array(
-      'first' => t("First PID to process. The namespace (ns) portion of this PID defines the default primary namespace.  This parameter may be specified as 'ns:first-last' in place of the --repeat option, or 'ns:*' to operate on all collection objects.  A special entry in the form of ns:last can be used to specify starting at the highest ns:PID number which has been indexed in Solr.\n"),
+      'first' => t("First PID to process. The namespace (ns) portion of this PID defines the default primary namespace.  This parameter may be specified as a .csv file path (like public://objects.csv), or 'ns:first-last' in place of the --repeat option, or 'ns:*' to operate on all collection objects.  A special entry in the form of ns:last can be used to specify starting at the highest ns:PID number which has been indexed in Solr.\n"),
       'fix'   => "Completes the name of the drush_idu_fix_NAME function to be called for each processed object.  Available Fix functions are:\n
 
       --- The first 2 commands may be automatically executed
@@ -439,7 +439,9 @@ function idu_drush_prep($first, &$last, &$pidn, &$range, &$namespace) {
   $collection = drush_get_option('collection', NULL);
   $contentType = drush_get_option('contentType', NULL);
   $created = drush_get_option('createdAfter', NULL);
+
   $pids = icu_drush_prep($first, $lastPID, $pidn, $range, $namespace, $after, $collection, $contentType, $created);
+
   list($ns, $last) = explode(':', $lastPID);
   return $pids;
 }
@@ -561,6 +563,8 @@ function drush_idu_iduFix($pspec, $fix) {
   if (!function_exists($function)) { drush_log("The specified Fix function '$function' does not exist!", 'error'); }
 
   $all_pids = array( );
+  $pids = array( );
+  $pidsFromFile = False;
 
   // If this is the List or Discover command, save the objects to a .csv file in /tmp.
   if ($fix == 'List' || $fix === 'Discover') {
@@ -569,52 +573,89 @@ function drush_idu_iduFix($pspec, $fix) {
     fputcsv($list, array("Function is $fix"));
   }
 
-  // If this is a forceable operation called with the --force option, then
-  // don't use Solr to retrieve the list of PIDs!
-  $forced = array("Discover", "DateCreatedFix", "Last");
-  $forceable = array_merge($forced, array("IndexSolr", "Purge", "ChangeText", "Derivatives", "PermissionsRelax", "List"));
+  // If $pspec is a CSV file path, open the file and read a list of PIDs from it, populate $pids with the object list from the CSV file.
 
-  $force = FALSE;
-  $repeat = drush_get_option('repeat', 0);
-  $reindex = drush_get_option('reindex', FALSE);
-
-  if (in_array($fix, $forceable)) {
-    if (in_array($fix, $forced)) {
-      $force = drush_get_option('force', TRUE);
-      $repeat = drush_get_option('repeat', 1000);    // repeat at least 1000 times if --repeat is not set
-    } else {
-      $force = drush_get_option('force', FALSE);
-      if ($force) { $repeat = drush_get_option('repeat', 1000); }
+  if (file_exists($pspec)) {
+    $count = 0;
+    $file = fopen($pspec, 'r');
+    while (($line = fgetcsv($file)) !== FALSE) {
+      // $line is an array of the csv elements
+      foreach ($line as $val) {
+        $pids[] = $val;
+        $count++;
+      }
     }
-  } else if (drush_get_option('force', FALSE)) {
-    drush_log("The specified Fix function '$function' does not support use of the --force option!", 'warning');
-  }
+    fclose($file);
+    drush_log("$count PIDs were read from $pspec and processing is ready to commence.  All other PID selection options are ingnored.", 'status');
+    $pidsFromFile = True;
+    $range = $count;
 
-  # If $pspec is ns:last then build $spec as a ns:first-last range.  Echo the PID that is 'last'.
-  list($ns, $special) = explode(':', $pspec);
-  if ($special === 'last') {
-    list($ns, $first) = explode(':', variable_get($ns.'_last', $ns.':2'));
-    $last = $first + $repeat;
+  } else {     // Not a file path...process the PID spec as usual.
+
+    // If this is a forceable operation called with the --force option, then
+    // don't use Solr to retrieve the list of PIDs!
+    $forced = array("Discover", "DateCreatedFix", "Last");
+    $forceable = array_merge($forced, array(
+      "IndexSolr",
+      "Purge",
+      "ChangeText",
+      "Derivatives",
+      "PermissionsRelax",
+      "List"
+    ));
+
+    $force = FALSE;
+    $repeat = drush_get_option('repeat', 0);
+    $reindex = drush_get_option('reindex', FALSE);
+
+    if (in_array($fix, $forceable)) {
+      if (in_array($fix, $forced)) {
+        $force = drush_get_option('force', TRUE);
+        $repeat = drush_get_option('repeat', 1000);    // repeat at least 1000 times if --repeat is not set
+      }
+      else {
+        $force = drush_get_option('force', FALSE);
+        if ($force) {
+          $repeat = drush_get_option('repeat', 1000);
+        }
+      }
+    }
+    else {
+      if (drush_get_option('force', FALSE)) {
+        drush_log("The specified Fix function '$function' does not support use of the --force option!", 'warning');
+      }
+    }
+
+    # If $pspec is ns:last then build $spec as a ns:first-last range.  Echo the PID that is 'last'.
+    list($ns, $special) = explode(':', $pspec);
+    if ($special === 'last') {
+      list($ns, $first) = explode(':', variable_get($ns . '_last', $ns . ':2'));
+      $last = $first + $repeat;
+      $spec = $ns . ':' . $first . '-' . $last;
+      drush_log("ns:last notation used.  '$ns:$first' was identifed as the last indexed PID.", 'status');
+    }
+    else {
+      list($ns, $spec) = explode(':', $pspec);
+      list($first, $last) = explode('-', $spec);
+      if (!$last) {
+        $last = $first + $repeat;
+      }
+    }
     $spec = $ns . ':' . $first . '-' . $last;
-    drush_log("ns:last notation used.  '$ns:$first' was identifed as the last indexed PID.", 'status');
-  } else {
-    list($ns, $spec) = explode(':', $pspec);
-    list($first, $last) = explode('-', $spec);
-    if (!$last) { $last = $first + $repeat; }
-  }
-  $spec = $ns . ':' . $first . '-' . $last;
 
-  // If this retrieve has a valid --force option without --reindex...
-  // The next operations depend on Solr so if a numeric range has been specified, make sure all valid objects in that range have been indexed!
-  if ($force && $reindex) {
-    for ($i = $first; $i <= $last; $i++) {
-      $status = idu_drush_update_solr_index("$ns:$i");
+    // If this retrieve has a valid --force option without --reindex...
+    // The next operations depend on Solr so if a numeric range has been specified, make sure all valid objects in that range have been indexed!
+    if ($force && $reindex) {
+      for ($i = $first; $i <= $last; $i++) {
+        $status = idu_drush_update_solr_index("$ns:$i");
+      }
     }
+
+    // $preOpts['all_pids'] = idu_drush_prep($spec, $junk, $pidn, $range, $ns, TRUE);  // get all eligible PIDs found in Solr
+
+    if (!$pids = idu_drush_prep($spec, $last, $pidn, $range, $ns, TRUE)) { return; }  // Get PIDs and initialize the loop..
+
   }
-
-  // $preOpts['all_pids'] = idu_drush_prep($spec, $junk, $pidn, $range, $ns, TRUE);  // get all eligible PIDs found in Solr
-
-  if (!$pids = idu_drush_prep($spec, $last, $pidn, $range, $ns, TRUE)) { return; }  // Get PIDs and initialize the loop..
 
   // Pre-process some options...
   // Check for a --substitutionsFile option, instead of $find and $replace, and process accordingly.
@@ -637,6 +678,7 @@ function drush_idu_iduFix($pspec, $fix) {
     idu_drush_log($msg, 'status');
 
   } else {
+
     $find = drush_get_option('find', NULL);
     $replace = drush_get_option('replace', NULL);
     $findReplace[$find] = $replace;
@@ -653,16 +695,19 @@ function drush_idu_iduFix($pspec, $fix) {
   $count = 0;
 
   // If there's only one PID... process it.
+
   if (count($pids) === 1) {
     if ($verbose)  { idu_drush_log("Processing PID $pids[0].", 'status'); }
     $count += call_user_func($function, $pids[0], $preOpts);
     idu_drush_post_to_file("iduFix - $fix: $pids[0] complete.", NULL, 'public://iduFix_progress.log');
     idu_drush_print_progress("iduFix - $fix", 0, 1);
 
-    // If there's no PID number range, process the PID list as-is.
-  } else if (is_null($pidn)) {
+  // If there's no PID number range, process the PID list as-is.
+
+  } else if (!$pidsFromFile && is_null($pidn)) {
     $range = count($pids);
     $i = 0;
+
     foreach ($pids as $pid => $label) {
       if ($verbose)  { idu_drush_log("Processing PID $pid.", 'status'); }
       list($nsl, $pidn) = explode(':', $pid);
@@ -672,7 +717,8 @@ function drush_idu_iduFix($pspec, $fix) {
       idu_drush_print_progress("iduFix - $fix", $i++, $range);
     }
 
-    // Operate on a range of PID numbers.
+  // Operate on a range of PID numbers.
+
   } else {
     $i = 0;
     foreach ($pids as $pid) {
@@ -4453,6 +4499,8 @@ function idu_drush_special_FixPrimarySort($pid) {
   static $mods_nsU = 'http://www.loc.gov/mods/v3';
 
   $sort = "/mods:mods/mods:extension/mods:primarySort";
+  $extension = "/mods:mods/mods:extension";
+
   $total = $count = 0;
 
   list($ns, $pidRange) = explode(':', $pid);
@@ -4479,29 +4527,84 @@ function idu_drush_special_FixPrimarySort($pid) {
       continue;
     }
 
+    $newValue = '99';
+
     if ($ds = $object['MODS']) {
       $xml = new DOMDocument;
       $xml->loadXML($ds->content);
       $mx = new DOMXPath($xml);
       $mx->registerNamespace($mods_ns, $mods_nsU);
-      $results = $mx->query($sort);
-      if ($results->length > 0) {
-        foreach ($results as $node) {
-          $count++;
-          $old = $node->nodeValue;
-          $node->nodeValue = '99';
+
+      // First, test for a /mods/extension element.  If none, add one and reset!
+      $r = $mx->query($extension);
+      if ($r->length < 1 ) {
+        idu_drush_log(__FUNCTION__ . " $pid has NO extension element!", 'warning');
+        $r0 = $mx->query('/mods:mods');
+        foreach ($r0 as $parent) {
+          $element = $xml->createElement('extension');
+          $parent->appendChild($element);
           $content = $xml->saveXML();
-          idu_drush_log(__FUNCTION__ . " $pid primarySort of $old has been updated!", 'info');
+          $object['MODS']->setContentFromString($content);
+        }
+
+        // Reset!
+        $xml = new DOMDocument;
+        $xml->loadXML($ds->content);
+        $mx = new DOMXPath($xml);
+        $mx->registerNamespace($mods_ns, $mods_nsU);
+      }
+
+      // Check for a /mods/extension/primarySort element.
+      $results = $mx->query($sort);
+
+      // Object has NO primarySort element...add one!
+      if ($results->length < 1 ) {
+        idu_drush_log(__FUNCTION__ . " $pid has NO primarySort element!", 'warning');
+
+        // Find the MODS' /mods/extension element
+        $r0 = $mx->query($extension);
+
+        // The following should be IMPOSSIBLE!
+        if ($r0->length < 1) {           // no <mods:extension> found... create one
+          idu_drush_log(__FUNCTION__ . " $pid has NO extension element!", 'error');
           break;
+        }
+
+        // Create a new /mods/extension/primarySort element
+        foreach ($r0 as $parent) {
+          $element = $xml->createElement('primarySort', '99');
+          $parent->appendChild($element);
+          idu_drush_log(__FUNCTION__ . " primarySort=99 added to $pid!", 'info');
+          $count++;
+        }
+
+      } else {   // Object has a primarySort...make sure it has a value of 99.
+
+        foreach ($results as $node) {
+          $old = $node->nodeValue;
+          if ($old != $newValue) {
+            $node->nodeValue = $newValue;
+            $content = $xml->saveXML();
+            idu_drush_log(__FUNCTION__ . " $pid primarySort of $old has been updated!", 'info');
+            $count++;
+          }
+          else {
+            idu_drush_log(__FUNCTION__ . " $pid primarySort of $old did not require an update.", 'info');
+          }
         }
       }
 
+      // Save changes/additions, if there are any.  And self-transform the MODS, then re-index in Solr
       if ($count > 0) {
         $total += $count;
-        if (!$dryRun) { $object['MODS']->setContentFromString($content); }
-      } else {
-        idu_drush_log(__FUNCTION__ . " $pid has NO primarySort element!", 'warning');
+        if (!$dryRun) {
+          $content = $xml->saveXML();
+          $object['MODS']->setContentFromString($content);
+          idu_drush_fix_SelfTransform($pid);
+          idu_drush_fix_IndexSolr($pid);
+        }
       }
+
     }
   }
 
