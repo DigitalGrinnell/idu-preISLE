@@ -275,10 +275,12 @@ function idu_drush_command( ) {
     'options' => array(
       'collection'   => t("Specifies the target collection (should use a wildcard and no colon, like '*test' in lieu of ':test') from which objects will be selected for processing.\n"),
       'contentType'  => t("Specifies the content model (type...should include wildcards like '*image*') of object(s) to be selected for processing.\n"),
-      'createdAfter' => t("If set with a YYYY-mm-ddTHH:ii:ssZ timestamp string, then only objects created after said local time are considered. Default is 2000-01-01T00:00:00Z.\n"),
-      'modAfter'     => t("If set with a YYYY-mm-ddTHH:ii:ssZ timestamp string, then only objects modified after said local time are considered. Default is 2000-01-01T00:00:00Z.\n"),
+      'createdDate'  => t("If set with any portion of a YYYY-mm-ddTHH:ii timestamp string, then only objects with a creation date/time matching createdDate* are considered. 2018-12, for example, applies to all objects created in December 2018.  Default is '2' for all objects.\n"),
+      'modDate'      => t("If set with any portion of a YYYY-mm-ddTHH:ii timestamp string, then only objects with a modified date/time matching modDate* are considered. 2018-12-0, for example, applies to all objects modified on December 1st thru 9th, 2018.  Default is '2' for all objects.\n"),
       'repeat'       => t("Specifies the number of consecutive PIDs following 'first' to be processed.  Default is 'all'.\n"),
+
       // Options above this line apply to ALL commands.
+
       'cmodel'    => t("Specifies the target CModel (content model) in the ChangeCompound command.  Defaults to 'islandora/sp_large_image_cmodel'.\n"),
       'compress'  => t("Specifies a file containing Kakadu 'compress' options for the ConvertTIFtoJP2 fix.\n"),
       'contents'  => t("Specifies text to be included in a datastream or XML element.  Default varies by use.\n"),
@@ -354,9 +356,9 @@ function idu_drush_command( ) {
     'options'  => array(
       'collection'   => t("Specifies the target collection (should include wildcards like '*test*') from which objects will be selected for processing.\n"),
       'contentType'  => t("Specifies the content model (type...should include wildcards like '*image*') of object(s) to be selected for processing.\n"),
-      'createdAfter' => t("If set with a YYYY-mm-ddTHH:ii:ssZ timestamp string, then only objects created after said local time are considered. Default is 2000-01-01T00:00:00Z.\n"),
+      'createdDate' => t("If set with a YYYY-mm-ddTHH:ii:ssZ timestamp string, then only objects created after said local time are considered. Default is 2000-01-01T00:00:00Z.\n"),
       'force'        => t("If specified, handle assignment will proceed even if the mods:identifier[@type='hdl'] element is not compatible with handle_op.\n"),
-      'modAfter'     => t("If set with a YYYY-mm-ddTHH:ii:ssZ timestamp string, then only objects modified after said local time are considered. Default is 2000-01-01T00:00:00Z.\n"),
+      'modDate'     => t("If set with a YYYY-mm-ddTHH:ii:ssZ timestamp string, then only objects modified after said local time are considered. Default is 2000-01-01T00:00:00Z.\n"),
       'repeat'       => t("Specifies the total number of PIDs, beginning with 'first' to be processed.  Default is 1.\n"),
     ),
     'examples' => array(
@@ -434,11 +436,13 @@ function idu_drush_help($command) {
  *
  */
 function idu_drush_prep($first, &$last, &$pidn, &$range, &$namespace) {
-  module_load_include('inc', 'icu', 'icu_drush');
-  $after = drush_get_option('modAfter', '2000-01-01T00:00:00Z');
+  // module_load_include('inc', 'icu', 'icu_drush');
+  // $after = drush_get_option('modAfter', '2000-01-01T00:00:00Z');
+
+  $after = drush_get_option('modDate', '2');
   $collection = drush_get_option('collection', NULL);
   $contentType = drush_get_option('contentType', NULL);
-  $created = drush_get_option('createdAfter', NULL);
+  $created = drush_get_option('createdDate', NULL);
 
   $pids = icu_drush_prep($first, $lastPID, $pidn, $range, $namespace, $after, $collection, $contentType, $created);
 
@@ -5053,3 +5057,502 @@ function hasInvalidXml($value) {
   }
   return $ret;
 }
+
+
+
+/* ICU replacement functions ---------------------------------------------------------------------------- */
+
+/**
+ * Some available drush functions...
+ *
+ * drush_log('Log an event using drush', 'warning');
+ * drush_set_error('Set an error with drush.');
+ * dt('Translate strings with drush');
+ * drush_print('Print to command line with drush');
+ * drush_print_table($rows, TRUE); //print a command line table with drush
+ * drush_confirm('Are you sure you want to continue?', $indent = 0); //Add drush confirmation
+ *
+ */
+/**
+ * Implements hook_drush_command().
+ */
+function icu_drush_command( ) {
+  $items = array();
+  $items['icuConnect'] = array(
+    'description' => t('Used to establish a Tuque connection to a named Fedora repository.'),
+    'arguments'   => array(
+      'fedora'    => t("The Fedora repository URL of the form http://repository.domain.com:8080/fedora."),
+    ),
+    'examples' => array(
+      'Example' => 'drush -u 55 icuC http://repository.grinnell.edu:8080/fedora',
+    ),
+    'aliases' => array('icuC'),
+  );
+  return $items;
+}
+/**
+ * Drush callback function for the 'drush icuC' command.
+ *
+ * @param string $fedora
+ *   The Fedora repository path from the sole argument to the icuC command.
+ *
+ * @return bool|\FedoraRepository
+ */
+function drush_icu_icuConnect($fedora) {
+  // module_load_include('inc', 'icu', 'icu');
+  return icu_Connect($fedora);
+}
+/**
+ * Examine common ixxX command arguments/options and return a list of PIDs meeting
+ * the specified criteria.
+ *
+ * @param string $pidSpec
+ *   The range (or single) PID argument as specified in the ixxX command.
+ * @param int $last
+ *   Returns the 'last' PID value based on the range specification, if any.  Note that $last may or may not be an existing object.
+ * @param int $pidn
+ *   Returns the integer PID number of 'range'.  Note that $pidn may or may not be an existing object.
+ * @param int $range
+ *   Returns the total number of PIDs to address.
+ * @param string $namespace
+ *   Returns the namespace (without a colon!) associated with the PID numbers returned by the function.
+ * @param null|string $lastOp
+ *   The date/time of the last successful operation.  Only objects modified after this date should be processed.
+ * @param bool $return
+ *   If TRUE, the function returns an array of valid PID numbers ONLY.
+ * @return array
+ *   An array of valid PIDs from the specified range.
+ *
+ */
+function icu_drush_prep($pidSpec, &$last, &$pidn, &$range, &$namespace, $lastOp='2', $collection=NULL, $contentType=NULL, $created=NULL) {
+  // module_load_include('inc', 'icu', 'icu');
+
+  // Initialize some things.
+  list($namespace, $pidN) = explode(':', $pidSpec);    // Break $pidSpec into namespace and PID number.
+  variable_set('icg_namespace', "$namespace:");
+  $local = $lastOp;    // all date/time values are stored in local time
+  drush_log(__FUNCTION__." will consider only objects modified with a yyyy-mm-dd local time matching $local*.", 'status');
+
+  // If the $pidN is an asterisk, then we are processing only collection objects.
+  if ($pidN === '*' && module_exists('islandora_solr_collection_search')) {
+    module_load_include('inc', 'islandora_solr_collection_search');
+    $pids = islandora_solr_collection_search_get_collection_list( );
+    $range = count($pids);
+    drush_log("The --collection, --contentType, --repeat, --modDate and --createdDate options will be ignored so that all $range collection objects will be processed.", 'status');
+    return $pids;
+  }
+
+  // If $pidN is not an integer...then we have only one PID to process...do it!
+  if (intval($pidN) === 0) {
+    drush_log("Completed fetch of a single object PID.", 'status');
+    $range = 1;
+    return array($pidSpec);
+  }
+
+  list($begin, $end) = explode('-', $pidN);   // Break $pidN into beginning and end of range, if necessary
+  $pidn = intval($begin);
+
+  // Check for the --repeat option or a defined $end to the range.
+  if (!empty($end)) {
+    $endN = intval($end);
+    $repeat = $endN - intval($begin);
+    $range = $repeat + 1;
+  } else {
+    $end = $endN = NULL;
+    $r = drush_get_option('repeat', 'all');
+    if ($r != 'all') {
+      $repeat = intval($r);
+      if ($repeat < 0) {
+        drush_log("The --repeat option must be 'all', zero or greater!  Forcing --repeat set to 'all'.", 'warning');
+        $repeat = 'all';
+      } else {
+        $range = $repeat + 1;
+        $endN = $begin + $repeat;
+      }
+    } else {
+      $repeat = 'all';
+    }
+  }
+
+  $start = date('H:i:s');
+  list($spec, $rest) = explode('-', $pidSpec);
+  drush_log("Starting operation for PID '$spec' and --repeat='$repeat' at $start.", 'status');
+
+  if ($collection) { drush_log("PIDs will be selected only within --collection='$collection'.", 'status'); }
+  if ($contentType) { drush_log("PIDs will be selected only where --contentType='$contentType'.", 'status'); }
+  if ($created) { drush_log("PIDs will be selected only where --createdDate matches '$created*'.", 'status'); }
+
+  // Fetch the specified PIDs and return them.
+  drush_log("Fetching all valid object PIDs in the specified range.", 'status');
+  $pids = icu_fetch_PIDs($namespace, $pidSpec, $endN, $local, $collection, $contentType, $created);
+  $range = count($pids);
+  $last = end($pids);
+
+  drush_log("Completed fetch of $range valid object PIDs.", 'status');
+  return $pids;
+}
+/**
+ * Prints a Drush progress bar directly to STDOUT.
+ *
+ * Call with no values (NULLs) for $current and $range to initialize the progress bar.
+ *
+ * @param string $label
+ *   Label to appear above the bar when initialized.
+ * @param int|NULL $current
+ *   The current counter (from 0 to $range) in the icg_first to icg_last progression.
+ * @param int|NULL $range
+ *   The total number of steps in the icg_first to icg_last progression.
+ */
+function icu_drush_print_progress($label, $current=NULL, $range=NULL) {
+  static $green = "\033[1;32m";
+  static $white = "\033[0;37m";
+  if (is_null($current)) {
+    $output = $green . "Progress: $label \n";
+    print $output;
+    return;
+  }
+  $ratio = ($current+1) / $range;
+  $percentage = floor($ratio * 100) . '%';
+  $columns = drush_get_context('DRUSH_COLUMNS', 80);
+  // Subtract 10 characters for the percentage, brackets, spaces and arrow.
+  $progress_columns = $columns - 10;
+  // If ratio is 1 (complete), the > becomes a = to make a full bar.
+  $arrow = ($ratio < 1) ? '>' : '=';
+  // Print a new line if ratio is 1 (complete). Otherwise, use a CR.
+  $line_ending = ($ratio < 1) ? "\r" : "\n";
+  // Determine the current length of the progress string.
+  $current_length = floor($ratio * $progress_columns);
+  $progress_string = str_pad('', $current_length, "=");
+  $output  = $green . '[';
+  $output .= $progress_string . $arrow;
+  $output .= str_pad('', $progress_columns - $current_length);
+  $output .= ']';
+  $output .= str_pad('', 5 - strlen($percentage)) . $percentage;
+  $output .= $line_ending . $white;
+  print $output;
+}
+/**
+ * Compare two DOMNode objects to see if they 'match'.
+ *
+ * Matching criteria include $node->nodeName AND $node->nodeType AND nodeValue.
+ *
+ * @param $node1 DOMNode
+ *   First DOMNode to compare.
+ * @param $node2 DOMNode
+ *   Second DOMNode to compare.
+ * @param $fullComparison boolean
+ *   If set, the comparison will also check that the nodes have the same parent
+ *     and the same attributes.
+ */
+function icu_drush_nodes_match($node1, $node2, $fullComparison=FALSE) {
+  if ($node1->nodeName === $node2->nodeName) {
+    if ($node1->nodeType === $node2->nodeType) {
+      if ($node1->nodeValue === $node2->nodeValue) {
+        $len = strlen(trim((string) $node1->nodeValue));
+        if ($len > 0) {
+          if (!$fullComparison) { return TRUE; }
+          $sameAttr = TRUE;
+          if ($node1->hasAttributes() && $node2->hasAttributes()) {
+            $attr1 = $attr2 = array( );
+            if (count($node1->attributes) != count($node2->attributes)) { $sameAttr = FALSE; }
+            if ($sameAttr) {
+              foreach ($node1->attributes as $attr) { $attr1[] = $attr; }
+              foreach ($node2->attributes as $attr) { $attr2[] = $attr; }
+              for ($i=0; $i<count($attr1); $i++) {
+                if ($attr1[$i]->name != $attr2[$i]->name) { $sameAttr = FALSE; }
+                if ($attr1[$i]->value != $attr2[$i]->value) { $sameAttr = FALSE; }
+              }
+            }
+          }
+          if ($node1->parentNode === $node2->parentNode && $sameAttr) { return TRUE; }
+        }
+      }
+    }
+  }
+  return FALSE;
+}
+/**
+ * Build and array of XPath expressions for the elements of a given datastream.
+ *
+ * @param $datastream
+ */
+function icu_drush_build_XPath_array($datastream) {
+  $simpleXML = new SimpleXMLElement($datastream->content);  // create a SimpleXMLElement object from the XML document
+  $contextElements = $simpleXML->xpath('/mods:mods');  // select the root MODS node
+  $contextElement = $contextElements[0];  // grab the first context node
+  $xpathList = XMLElementToXPath($contextElement->getName(), $contextElement);
+  return $xpathList;
+  // foreach ($xpathList as $xpath) { echo $xpath . "\n"; }
+}
+/**
+ * Recursive function that takes a SimpleXMLElement object and returns a
+ * list of XPath expressions.
+ *
+ * @param $currentXPath
+ * @param $myXMLElement
+ */
+function XMLElementToXPath($currentXPath, $myXMLElement) {
+  $xpathList = array( );
+  $attributes = $myXMLElement->attributes( );  // grab attributes from current root element
+  // Process element attributes, if any.
+  foreach($attributes as $att_key=>$att_value) {  // process element attributes (if any)
+    $xpathList[] = ($currentXPath!=''?$currentXPath.'/':'').'@'. $att_key;  // create XPath for attribute
+    $xpathList[] = ($currentXPath!=''?$currentXPath:'').'[@'. $att_key.'=\''.$att_value.'\']'; // create XPath expression for element with certain attribute value
+  }
+  // Process children, if any.
+  foreach($myXMLElement->children() as $childElement) {
+//  $xpathList[]= ($currentXPath!=''?$currentXPath.'/':'').(string) $childElement->getName(); // create XPath expression for element
+    if ($childValue = (string) $childElement->title) {
+      $append = "/text()='$childValue'";
+    } else {
+      $append = '';
+    }
+    $xpathList[]= ($currentXPath!=''?$currentXPath.'/':'').(string) $childElement->getName().$append; // create XPath expression for element
+    if ($childElement instanceof SimpleXMLElement) {  // if child is an XML node itself then go into recursion
+      $xpathList = array_merge($xpathList,XMLElementToXPath(($currentXPath!=''?$currentXPath.'/':'').(string)$childElement->getName(),$childElement));
+    }
+  }
+  return $xpathList;
+}
+
+/* More from icu.inc */
+
+/**
+ * Returns the DSIDs for known, not-original-content datastreams.
+ *
+ * @return array
+ */
+function icu_DSIDs( ) {
+  return array_keys(rcDSMimes( ));
+}
+/**
+ * Returns an array of MIME types for known, non-original content datastreams.
+ *
+ * @return array
+ */
+function icu_DSMimes( ) {
+  static $ds = array( 'RELS-EXT' => 'application/rdf+xml',
+    'DC' => 'text/xml',
+    'MODS' => 'text/xml',
+    'RELS-INT' => 'application/rdf+xml',
+    'TN' => 'image/jpeg',
+    'POLICY' => 'text/xml',
+    'PREVIEW' => 'image/jpeg',
+    'JPG' => 'image/jpeg',
+    'JP2' => 'image/jp2',
+    'MEDIUM_SIZE' => 'image/jpeg',
+    'FULL_TEXT' => 'text/plain',
+    'OCR' => 'text/plain',
+    'RAW_HOCR' => 'text/xml',
+    'HOCR' => 'text/html',
+    'ENCODED_OCR' => 'text/xml',
+    'islandora_workflow' => 'text/xml',
+    'OriginalDC' => 'text/xml',
+    'PROXY_MP3' => 'audio/mpeg',
+    'MP4' => 'video/mp4',
+  );
+  return $ds;
+}
+/**
+ * A simple routine to pluralize a noun based on $count.
+ *
+ * @param integer $count - The number of objects.
+ * @param $singular - The singular noun to return.
+ * @param bool|FALSE $plural - The plural noun to return, or simply append an 's' to the $singular if FALSE.
+ * @return bool|string - The pluralized noun.
+ *
+ */
+function icu_pluralize($count, $singular, $plural = false) {
+  return ($count == 1 ? $singular : ($plural ? $plural : $singular.'s'));
+}
+
+/**
+ * Fetch a list of ALL numbered PIDs in a specified namespace.
+ *
+ * @param $namespace
+ *   The namespace of the PIDs to return.
+ * @param $start
+ *   The beginning PID value (namespace:number).
+ * @param null|int $end
+ *   The end PID number ONLY.  Defaults to NULL which returns
+ *   all available PIDs after $start.
+ * @param null|string $onlyIn
+ *  Specifies the 'fgs_lastModifiedDate_dt' date for the query to filter objects with.  This must specify a specific millenium, century, decade, year, month, week (9 days), or day in the form: yyyy-mm-dd.  So '2018-12-0' specifies the first 9 days of December, 2018.  Defaults to '2', the start of the millennium (returns ALL objects).
+ * @return array|bool
+ *   FALSE upon error, or an array of PIDs.
+ *
+ */
+function icu_fetch_PIDs($namespace, $start, $end=NULL, $onlyIn="2", $collection=NULL, $contentType=NULL, $created=NULL) {
+  $pids = $pidNums = array( );
+
+  // Check the $namespace and $start arguments.
+  list($ns, $startNum) = explode(':', $start);
+  $startN = intval($startNum);
+
+  if ($startN < 1 || $namespace != $ns) {
+    drush_log(__FUNCTION__." error.  Invalid namespace ($namespace) or start ($start) specified.", 'error');
+    return FALSE;
+  }
+
+  // The following block of code builds an HTTP Solr request.  As such, it does NOT adhere to user permissions per XACML.
+  // It was designed to avoid possible recursion.
+
+  // Build the namespace object query...
+
+  $q = "PID:$namespace*";     // $q = "PID:(*".$namespace."\:*)";
+  $fq = "&fq=fgs_lastModifiedDate_dt:".$onlyIn."*";    // filter by modified date
+
+  if ($collection) { $fq .= "&fq=RELS_EXT_isMemberOfCollection_uri_s:".$collection; }
+  if ($contentType) { $fq .= "&fq=RELS_EXT_hasModel_uri_s:".$contentType; }
+  if ($created) { $fq .= "&fq=fgs_createdDate_dt:".$created."*"; }   // filter by created date
+
+  $url = variable_get('islandora_solr_url', 'solr:8080/solr');
+  $fl = 'PID';
+
+  if (preg_match('/^http:\/\/\w.*/', $url) == 1) {
+    $request = $url . '/select?q=' . $q . $fq . '&fl=' . $fl . '&wt=php&rows=999999';
+  } else {
+    $request = 'http://' . $url . '/select?q=' . $q . $fq . '&fl=' . $fl . '&wt=php&rows=999999';
+  }
+
+  // Build and execute the Solr query.
+  // Solr query code from http://wiki.apache.org/solr/SolPHP
+  // $request = "http://solr:8080/solr/select?q=PID:grinnell*&fq=fgs_lastModifiedDate_dt:2019*&fl=PID&wt=php&rows=999999";
+
+  $code = file_get_contents($request);
+  drush_log("The Solr PID query return code is:\n$code.", 'status');
+
+  if ($code) {
+    eval("\$result = " . $code . ";");
+    if ($result) {
+      $o = $result['response']['docs'];
+      foreach ($o as $a) {
+        $pid = $a['PID'];
+        list($ns, $pidn) = explode(':',$pid);
+        $pidN = intval($pidn);
+        if ($pidN >= $startN && (is_null($end) || $pidN <= $end)) { $pidNums[] = $pidN; }  // save only numeric PID numbers
+      }
+    }
+    asort($pidNums);                   // sort by PID number
+    foreach ($pidNums as $pidN) {
+      $pids[] = $ns.':'.$pidN;         // return PIDs in sorted order
+    }
+    return $pids;
+  }
+  return FALSE;
+}
+/**
+ * Return the proper MIME type for an OBJ datastream based on content model.  Some have * because they can vary.
+ *
+ * @return mixed
+ */
+function icu_OBJMimes( ) {
+  static $ds = array( 'sp_pdf' => 'application/pdf',
+    'sp_basic_image' => 'image/jpeg',
+    'sp_large_image_cmodel' => 'image/tiff',
+    'compoundCModel' => 'NONE',
+    'binaryObjectCModel' => 'application/*',
+    'bookCModel' => 'image/tiff',
+    'pageCModel' => 'image/tiff',
+    'sp-audioCModel' => 'audio/*',
+    'sp_videoCModel' => 'video/*',
+  );
+  return $ds;
+}
+/**
+ * Fetch the existing Fedora connection.
+ */
+function icu_Repository( ) {
+  // Check that the repository is open.  If not, open it.
+  if (isset($_SESSION[__FUNCTION__])) {
+    $repository = $_SESSION[__FUNCTION__];
+    return $repository;
+  }
+  // If not, open it.
+  if (!$fedora = variable_get('icu_Connect', NULL)) {
+    drush_log(__FUNCTION__." error: No Fedora connection or URL found!  Use 'drush icuC' to make a connection.", 'error');
+    die;
+  } else {
+    $repository = icu_Connect($fedora);
+    $_SESSION[__FUNCTION__] = $repository;
+  }
+  return $repository;
+}
+/**
+ * Build and execute a Solr query as an HTTP solr request.
+ *
+ * @param $q
+ *   The query to execute in a form like... "RELS_EXT_hasModel_uri_s:(info\:fedora/islandora\:collectionCModel)"
+ * @param $fl
+ *   The CSV list of solr fields to return like... "PID,fgs_label_s"
+ *
+ * @return bool|array
+ *   FALSE upon error, or the resulting array of requested field arrays.  So, a
+ *   $q of "PID,fgs_labels" might return an array like this...
+ *      [0] => array("PID" => "faulconer-art:4", "fgs_label_s" => "Heat"),
+ *      [1] => array("PID" => "faulconer-art:1234", "fgs_label_s" => "Bogus Object"),
+ *      ...
+ *
+ */
+function icu_solr_query($q, $fl) {
+  // The following block of code builds an HTTP Solr request.  As such, it
+  // does NOT adhere to user permissions per XACML.  It was designed to
+  // avoid possible recursion with Islandora's solr queries.
+  // Build the collections list query...
+  $url = variable_get('islandora_solr_url', 'localhost:8080/solr');
+  $request = 'http://' . $url . '/select?q=' . $q . '&fl=' . $fl . '&wt=php&rows=999';
+  // Build and execute a Solr query for basic collections.
+  //
+  // !!! Important !!!
+  //   This cannot be an IslandoraSolrQueryProcessor( ) instance.  Doing that
+  //   is likely to introduce recursion in the islandora_solr_search hooks!
+  //
+  // Solr query code from http://wiki.apache.org/solr/SolPHP
+  //
+  $code = file_get_contents($request);
+  if ($code) {
+    eval("\$result = " . $code . ";");
+    if ($result) {
+      $found = (isset($result['response']['numFound']) ? $result['response']['numFound'] : FALSE);
+      if ($found) {
+        $c = $result['response']['docs'];
+        return $c;
+      }
+    }
+  }
+  return FALSE;
+}
+/**
+ * Return the count and content from an existing health check cell.
+ *
+ * @param string $cell
+ * @return array
+ */
+function icu_get_count_and_content($cell) {
+  $matches = array( );
+  if (empty($cell)) {
+    return array(0, NULL);
+  } else if (preg_match('/^\[(\d+)] (.+)$/', $cell, $matches)) {  // count and content
+    return array(intval($matches[1]), trim($matches[2]));
+  } else if (preg_match('/^\[(\d+)]$/', $cell, $matches)) {  // count only
+    return array(intval($matches[1]), NULL);
+  } else if (preg_match('/^(.*)$/', $cell, $matches)) {  // content only
+    $content = $matches[1];
+    return array(1, trim($content));
+  }
+}
+/*
+@TODO... Fix this!
+*/
+
+//do this until we expose these in a module or library
+
+@include_once 'sites/all/libraries/tuque/Datastream.php';
+@include_once 'sites/all/libraries/tuque/FedoraApi.php';
+@include_once 'sites/all/libraries/tuque/FedoraApiSerializer.php';
+@include_once 'sites/all/libraries/tuque/Object.php';
+@include_once 'sites/all/libraries/tuque/RepositoryConnection.php';
+@include_once 'sites/all/libraries/tuque/Cache.php';
+@include_once 'sites/all/libraries/tuque/RepositoryException.php';
+@include_once 'sites/all/libraries/tuque/Repository.php';
+@include_once 'sites/all/libraries/tuque/FedoraRelationships.php';
